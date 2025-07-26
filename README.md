@@ -1,5 +1,3 @@
-# Emotica
-
 # Emotica - Emotion-Aligned Conversational AI Assistant
 
 ## 🌟 Project Overview
