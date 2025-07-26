@@ -1,7 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; // Import useRef for scrolling
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, query, onSnapshot, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 
 // --- Helper function to generate a color from a string (for consistent avatar colors) ---
 const stringToColor = (str) => {
@@ -61,8 +58,6 @@ const leftArrowIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/sv
 const startCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.107l-3.397 3.397a1 1 0 01-1.414 0l-3.397-3.397m5.656-5.656l3.397-3.397a1 1 0 010-1.414l-3.397-3.397"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>`;
 const endCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14L21 3m0 0l-7.962 7.962M21 3v7.962m0 0a3 3 0 01-3 3v2a3 3 0 01-3-3m-4 0a3 3 0 01-3-3v-2a3 3 0 013-3m0 0h4m-7 0a3 3 0 01-3-3v-2a3 3 0 013-3m0 0h4m0 0a3 3 0 01-3-3v-2a3 3 0 013-3"/></svg>`;
 const videoCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.555-4.555A1 1 0 0121 6.445v11.11a1 1 0 01-1.445.89L15 14M5 18H3a2 2 0 01-2-2V8a2 2 0 012-2h2l3-3 3 3h2a2 2 0 012 2v8a2 2 0 01-2 2H5z"/></svg>`;
-const settingsIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00-.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001.51-1V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>`;
-
 
 const addCharacterIconUri = `data:image/svg+xml;base64,${btoa(addCharacterIconSvgContent)}`; // Re-added for "Create New"
 const newChatIconUri = `data:image/svg+xml;base64,${btoa(newChatIconSvgContent)}`;
@@ -71,12 +66,10 @@ const leftArrowIconUri = `data:image/svg+xml;base64,${btoa(leftArrowIconSvgConte
 const startCallIconUri = `data:image/svg+xml;base64,${btoa(startCallIconSvgContent)}`;
 const endCallIconUri = `data:image/svg+xml;base64,${btoa(endCallIconSvgContent)}`;
 const videoCallIconUri = `data:image/svg+xml;base64,${btoa(videoCallIconSvgContent)}`;
-const settingsIconUri = `data:image/svg+xml;base64,${btoa(settingsIconSvgContent)}`;
 
 // New SVG icons for password visibility toggle
-// MODIFIED: Changed fill="none" to fill="currentColor" for solid icons
-const eyeOpenIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-const eyeClosedIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.54 18.54 0 015.04-5.04M9.91 4.24A9.91 9.91 0 0112 4c7 0 11 8 11 8a18.54 18.54 0 01-5.04 5.04M12 12a3 3 0 100-6 3 3 0 000 6z"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+const eyeOpenIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const eyeClosedIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.54 18.54 0 015.04-5.04M9.91 4.24A9.91 9.91 0 0112 4c7 0 11 8 11 8a18.54 18.54 0 01-5.04 5.04M12 12a3 3 0 100-6 3 3 0 000 6z"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
 const eyeOpenIconUri = `data:image/svg+xml;base64,${btoa(eyeOpenIconSvgContent)}`;
 const eyeClosedIconUri = `data:image/svg+xml;base64,${btoa(eyeClosedIconSvgContent)}`;
@@ -469,25 +462,6 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
     );
 };
 
-// Global variables for Firebase configuration, provided by the Canvas environment.
-// These are checked for existence to ensure the app runs correctly within the environment.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; // Corrected: initialAuthToken should be used directly here
-
-// Initialize Firebase App and Firestore outside of the component to prevent re-initialization.
-let app;
-let db;
-let auth;
-
-try {
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    auth = getAuth(app);
-} catch (error) {
-    console.error("Firebase initialization error:", error);
-    // Handle the error, e.g., display a message to the user
-}
 
 // --- Message Component (for displaying individual chat messages) ---
 const Message = ({ message, userAvatar, characterAvatar, characterName }) => { // Added characterName prop
@@ -732,15 +706,40 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
 
             <div className="flex-1 overflow-y-auto pr-2 mb-4 scrollbar-thin scrollbar-thumb-blue-500 scrollbar-track-gray-700">
                 {messages.map((msg) => (
-                    <Message
-                        key={msg.id}
-                        message={msg}
-                        userAvatar={userAvatar}
-                        characterAvatar={characterAvatar}
-                        characterName={characterName}
-                    />
+                    <div
+                        key={msg.id} // Key is already msg.id
+                        className={`flex mb-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                        {msg.sender === 'user' && (
+                            <div className="rounded-full overflow-hidden w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-700 border border-gray-600 mr-2">
+                                {userAvatar ? (
+                                    <img src={userAvatar} alt="Your Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <img src={createIconSvgDataUri(genericPersonIconPath, '#9CA3AF', 24, 24)} alt="Default User Avatar" className="w-full h-full object-cover" />
+                                )}
+                            </div>
+                        )}
+                        <div
+                            className={`max-w-[70%] px-4 py-2 rounded-xl shadow-md ${
+                                msg.sender === 'user'
+                                    ? 'bg-blue-600 text-white rounded-br-none'
+                                    : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                            }`}
+                        >
+                            <p className="text-base">{msg.text}</p>
+                        </div>
+                        {msg.sender === 'bot' && (
+                            <div className="rounded-full overflow-hidden w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-700 border border-gray-600 ml-2">
+                                {characterAvatar ? (
+                                    <img src={characterAvatar} alt={characterName} className="w-full h-full object-cover" />
+                                ) : (
+                                    <img src={createInitialAvatar(characterName)} alt={characterName} className="w-full h-full object-cover" />
+                                )}
+                            </div>
+                        )}
+                    </div>
                 ))}
-                {isBotSpeaking && (
+                 {isBotSpeaking && (
                     <div className="flex justify-start">
                         <div className="max-w-[70%] px-4 py-2 rounded-xl shadow-md bg-gray-700 text-gray-100 animate-pulse">
                             <span>Bot is speaking...</span>
@@ -766,6 +765,184 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
         </div>
     );
 };
+
+// --- Auth Page Component (for Login/Register) ---
+const AuthPage = ({ navigateTo, setIsLoggedIn, setUserName, setUserAvatar, setUserEmail }) => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [hasConsented, setHasConsented] = useState(false); // MODIFICATION: New state for consent
+    const [messageBoxContent, setMessageBoxContent] = useState('');
+    const [showPassword, setShowPassword] = useState(false); // NEW: State for password visibility
+
+    const [registeredUsers, setRegisteredUsers] = useState(() => {
+        try {
+            const storedUsers = localStorage.getItem('registeredUsers');
+            // MODIFICATION: Ensure hasConsented is loaded from storedUsers, default to false if not present
+            return storedUsers ? JSON.parse(storedUsers).map(user => ({ ...user, hasConsented: user.hasConsented || false })) : [];
+        }
+        catch (error) {
+            console.error("Failed to parse registered users from localStorage:", error);
+            return [];
+        }
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+        }
+        catch (error) {
+            console.error("Failed to save registered users to localStorage:", error);
+        }
+    }, [registeredUsers]);
+
+    const showMessageBox = (content) => setMessageBoxContent(content);
+    const closeMessageBox = () => setMessageBoxContent('');
+
+    // MODIFICATION: Strong password validation regex
+    const strongPasswordRegex = new RegExp(
+        "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])(?=.{8,})"
+    );
+
+    const handleAuthSubmit = (e) => {
+        e.preventDefault();
+
+        if (isLogin) {
+            const user = registeredUsers.find(
+                (u) => u.email === email && u.password === password
+            );
+
+            if (user) {
+                const userNameToSet = user.name || email.split('@')[0]; // Use stored name or derive
+                const generatedAvatar = createInitialAvatar(userNameToSet);
+
+                showMessageBox('Login successful! Navigating to Home.');
+                setTimeout(() => {
+                    closeMessageBox();
+                    setIsLoggedIn(true);
+                    setUserName(userNameToSet);
+                    setUserEmail(user.email); // Set user email
+                    setUserAvatar(generatedAvatar);
+                    navigateTo('home');
+                }, 1500);
+            } else {
+                showMessageBox('Login failed: Invalid email or password. Please register if you don\'t have an account.');
+            }
+        } else { // Registration logic
+            const existingUser = registeredUsers.find((u) => u.email === email);
+
+            if (existingUser) {
+                showMessageBox('Registration failed: An account with this email already exists.');
+            } else if (!strongPasswordRegex.test(password)) { // MODIFICATION: Validate password strength
+                showMessageBox('Password must be at least 8 characters long and include uppercase, lowercase, numbers, and special characters.');
+            } else if (!hasConsented) { // MODIFICATION: Validate consent
+                showMessageBox('Please agree to the privacy policy and data usage to register.');
+            }
+            else {
+                showMessageBox('Attempting to register...');
+                const userNameToStore = email.split('@')[0]; // Initial name from email
+                const generatedAvatar = createInitialAvatar(userNameToStore);
+                // MODIFICATION: Store hasConsented and initial name with the new user
+                const newUser = { email, password, avatar: generatedAvatar, hasConsented, name: userNameToStore };
+                setRegisteredUsers((prevUsers) => [...prevUsers, newUser]);
+                closeMessageBox();
+                showMessageBox('Registration successful! Please log in.');
+                setIsLogin(true);
+            }
+        }
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-gray-100">
+            <h2 className="text-4xl font-bold mb-8 text-blue-300">
+                {isLogin ? 'Login' : 'Register'}
+            </h2>
+            <form onSubmit={handleAuthSubmit} className="w-full max-w-sm bg-gray-800 p-8 rounded-xl shadow-lg">
+                <div className="mb-6">
+                    <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="email">
+                        Email
+                    </label>
+                    <input
+                        type="email"
+                        id="email"
+                        className="shadow appearance-none border rounded-xl w-full py-3 px-4 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
+                        placeholder="your@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                    />
+                </div>
+                <div className="mb-6">
+                    <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="password">
+                        Password
+                    </label>
+                    <div className="relative"> {/* NEW: Wrap input and button in a relative container */}
+                        <input
+                            type={showPassword ? 'text' : 'password'} /* NEW: Toggle type */
+                            id="password"
+                            className="shadow appearance-none border rounded-xl w-full py-3 px-4 pr-10 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
+                            placeholder="********"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)} // NEW: Toggle visibility
+                            className="absolute inset-y-0 right-0 p-1 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                            <img
+                                src={showPassword ? eyeOpenIconUri : eyeClosedIconUri} // NEW: Use eye icons
+                                alt={showPassword ? 'Hide password' : 'Show password'}
+                                className="h-5 w-5 text-white" // MODIFIED: Changed text-gray-400 to text-white
+                            />
+                        </button>
+                    </div>
+                </div>
+                {/* MODIFICATION: Privacy Consent Checkbox (only for registration) */}
+                {!isLogin && (
+                    <div className="mb-6 flex items-start">
+                        <input
+                            type="checkbox"
+                            id="consent"
+                            className="mr-2 mt-1 h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                            checked={hasConsented}
+                            onChange={(e) => setHasConsented(e.target.checked)}
+                            required // Make consent mandatory for registration
+                        />
+                        <label htmlFor="consent" className="text-gray-300 text-sm">
+                            I agree to the <span
+                                onClick={() => navigateTo('privacy-policy')} // MODIFICATION: Make text clickable
+                                className="text-blue-300 hover:underline cursor-pointer"
+                            >Privacy Policy</span> and consent to data usage for improving AI services.
+                        </label>
+                    </div>
+                )}
+                <div className="flex items-center justify-between mb-4">
+                    <button
+                        type="submit"
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl focus:outline-none focus:shadow-outline transition duration-200 ease-in-out transform hover:scale-105"
+                    >
+                        {isLogin ? 'Login' : 'Register'}
+                    </button>
+                </div>
+                <p className="text-center text-sm text-gray-300">
+                    {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
+                    <button
+                        type="button"
+                        onClick={() => setIsLogin(!isLogin)}
+                        className="text-blue-300 hover:text-blue-200 font-bold focus:outline-none"
+                    >
+                        {isLogin ? 'Register here' : 'Login here'}
+                    </button>
+                </p>
+            </form>
+            <MessageBox message={messageBoxContent} onClose={closeMessageBox} />
+        </div>
+    );
+};
+
 
 // --- Character Creation Page Component ---
 const CharacterCreationPage = ({ navigateTo, onSaveCharacter }) => {
@@ -1042,7 +1219,6 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                         type="text"
                         id="name"
                         className="shadow appearance-none border rounded-xl w-full py-3 px-4 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
-                        placeholder="Your Name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required
@@ -1056,7 +1232,6 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                         type="email"
                         id="email"
                         className="shadow appearance-none border rounded-xl w-full py-3 px-4 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
-                        placeholder="your@email.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
@@ -1066,9 +1241,9 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                     <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="newPassword">
                         New Password (optional)
                     </label>
-                    <div className="relative">
+                    <div className="relative"> 
                         <input
-                            type={showNewPassword ? 'text' : 'password'}
+                            type={showNewPassword ? 'text' : 'password'} 
                             id="newPassword"
                             className="shadow appearance-none border rounded-xl w-full py-3 px-4 pr-10 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
                             placeholder="Leave blank to keep current password"
@@ -1078,7 +1253,7 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                         <button
                             type="button"
                             onClick={() => setShowNewPassword(!showNewPassword)} // NEW: Toggle visibility
-                            className="absolute inset-y-0 right-2 p-2 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
+                            className="absolute inset-y-0 right-0 p-1 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
                             aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
                         >
                             <img
@@ -1093,9 +1268,9 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                     <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="confirmNewPassword">
                         Confirm New Password
                     </label>
-                    <div className="relative">
+                    <div className="relative"> 
                         <input
-                            type={showConfirmNewPassword ? 'text' : 'password'}
+                            type={showConfirmNewPassword ? 'text' : 'password'} 
                             id="confirmNewPassword"
                             className="shadow appearance-none border rounded-xl w-full py-3 px-4 pr-10 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
                             value={confirmNewPassword}
@@ -1103,12 +1278,12 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                         />
                         <button
                             type="button"
-                            onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
-                            className="absolute inset-y-0 right-2 p-2 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
+                            onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)} 
+                            className="absolute inset-y-0 right-0 p-1 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
                             aria-label={showConfirmNewPassword ? 'Hide confirm new password' : 'Show confirm new password'}
                         >
                             <img
-                                src={showConfirmNewPassword ? eyeOpenIconUri : eyeClosedIconUri}
+                                src={showConfirmNewPassword ? eyeOpenIconUri : eyeClosedIconUri} 
                                 alt={showConfirmNewPassword ? 'Hide confirm new password' : 'Show confirm new password'}
                                 className="h-5 w-5 text-white" // MODIFIED: Changed text-gray-400 to text-white
                             />
@@ -1119,9 +1294,9 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                     <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="currentPasswordVerification">
                         Current Password (to confirm changes)
                     </label>
-                    <div className="relative">
+                    <div className="relative"> 
                         <input
-                            type={showCurrentPasswordVerification ? 'text' : 'password'}
+                            type={showCurrentPasswordVerification ? 'text' : 'password'} 
                             id="currentPasswordVerification"
                             className="shadow appearance-none border rounded-xl w-full py-3 px-4 pr-10 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
                             value={currentPasswordVerification}
@@ -1131,7 +1306,7 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
                         <button
                             type="button"
                             onClick={() => setShowCurrentPasswordVerification(!showCurrentPasswordVerification)} // NEW: Toggle visibility
-                            className="absolute inset-y-0 right-2 p-2 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
+                            className="absolute inset-y-0 right-0 p-1 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
                             aria-label={showCurrentPasswordVerification ? 'Hide current password' : 'Show current password'}
                         >
                             <img
@@ -1200,187 +1375,9 @@ const AccountSettingsPage = ({ navigateTo, userName, userEmail, handleUpdateUser
 };
 
 
-// --- Auth Page Component (for Login/Register) ---
-const AuthPage = ({ navigateTo, setIsLoggedIn, setUserName, setUserAvatar, setUserEmail }) => {
-    const [isLogin, setIsLogin] = useState(true);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [hasConsented, setHasConsented] = useState(false); // MODIFICATION: New state for consent
-    const [messageBoxContent, setMessageBoxContent] = useState('');
-    const [showPassword, setShowPassword] = useState(false); // NEW: State for password visibility
-
-    const [registeredUsers, setRegisteredUsers] = useState(() => {
-        try {
-            const storedUsers = localStorage.getItem('registeredUsers');
-            // MODIFICATION: Ensure hasConsented is loaded from storedUsers, default to false if not present
-            return storedUsers ? JSON.parse(storedUsers).map(user => ({ ...user, hasConsented: user.hasConsented || false })) : [];
-        }
-        catch (error) {
-            console.error("Failed to parse registered users from localStorage:", error);
-            return [];
-        }
-    });
-
-    useEffect(() => {
-        try {
-            localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-        }
-        catch (error) {
-            console.error("Failed to save registered users to localStorage:", error);
-        }
-    }, [registeredUsers]);
-
-    const showMessageBox = (content) => setMessageBoxContent(content);
-    const closeMessageBox = () => setMessageBoxContent('');
-
-    // MODIFICATION: Strong password validation regex
-    const strongPasswordRegex = new RegExp(
-        "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])(?=.{8,})"
-    );
-
-    const handleAuthSubmit = (e) => {
-        e.preventDefault();
-
-        if (isLogin) {
-            const user = registeredUsers.find(
-                (u) => u.email === email && u.password === password
-            );
-
-            if (user) {
-                const userNameToSet = user.name || email.split('@')[0]; // Use stored name or derive
-                const generatedAvatar = createInitialAvatar(userNameToSet);
-
-                showMessageBox('Login successful! Navigating to Home.');
-                setTimeout(() => {
-                    closeMessageBox();
-                    setIsLoggedIn(true);
-                    setUserName(userNameToSet);
-                    setUserEmail(user.email); // Set user email
-                    setUserAvatar(generatedAvatar);
-                    navigateTo('home');
-                }, 1500);
-            } else {
-                showMessageBox('Login failed: Invalid email or password. Please register if you don\'t have an account.');
-            }
-        } else { // Registration logic
-            const existingUser = registeredUsers.find((u) => u.email === email);
-
-            if (existingUser) {
-                showMessageBox('Registration failed: An account with this email already exists.');
-            } else if (!strongPasswordRegex.test(password)) { // MODIFICATION: Validate password strength
-                showMessageBox('Password must be at least 8 characters long and include uppercase, lowercase, numbers, and special characters.');
-            } else if (!hasConsented) { // MODIFICATION: Validate consent
-                showMessageBox('Please agree to the privacy policy and data usage to register.');
-            }
-            else {
-                showMessageBox('Attempting to register...');
-                const userNameToStore = email.split('@')[0]; // Initial name from email
-                const generatedAvatar = createInitialAvatar(userNameToStore);
-                // MODIFICATION: Store hasConsented and initial name with the new user
-                const newUser = { email, password, avatar: generatedAvatar, hasConsented, name: userNameToStore };
-                setRegisteredUsers((prevUsers) => [...prevUsers, newUser]);
-                closeMessageBox();
-                showMessageBox('Registration successful! Please log in.');
-                setIsLogin(true);
-            }
-        }
-    };
-
-    return (
-        <div className="flex flex-col items-center justify-center h-full text-gray-100">
-            <h2 className="text-4xl font-bold mb-8 text-blue-300">
-                {isLogin ? 'Login' : 'Register'}
-            </h2>
-            <form onSubmit={handleAuthSubmit} className="w-full max-w-sm bg-gray-800 p-8 rounded-xl shadow-lg">
-                <div className="mb-6">
-                    <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="email">
-                        Email
-                    </label>
-                    <input
-                        type="email"
-                        id="email"
-                        className="shadow appearance-none border rounded-xl w-full py-3 px-4 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
-                        placeholder="your@email.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                    />
-                </div>
-                <div className="mb-6">
-                    <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="password">
-                        Password
-                    </label>
-                    <div className="relative"> {/* NEW: Wrap input and button in a relative container */}
-                        <input
-                            type={showPassword ? 'text' : 'password'} /* NEW: Toggle type */
-                            id="password"
-                            className="shadow appearance-none border rounded-xl w-full py-3 px-4 pr-10 text-gray-100 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 border-gray-600 placeholder-gray-400"
-                            placeholder="********"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
-                        <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)} // NEW: Toggle visibility
-                            className="absolute inset-y-0 right-2 p-2 flex items-center justify-center text-sm leading-5 bg-transparent border-none focus:outline-none hover:bg-gray-700 hover:bg-opacity-20 hover:rounded-full transition-colors duration-200" // Adjusted classes
-                            aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        >
-                            <img
-                                src={showPassword ? eyeOpenIconUri : eyeClosedIconUri} // NEW: Use eye icons
-                                alt={showPassword ? 'Hide password' : 'Show password'}
-                                className="h-5 w-5 text-white" // MODIFIED: Changed text-gray-400 to text-white
-                            />
-                        </button>
-                    </div>
-                </div>
-                {/* MODIFICATION: Privacy Consent Checkbox (only for registration) */}
-                {!isLogin && (
-                    <div className="mb-6 flex items-start">
-                        <input
-                            type="checkbox"
-                            id="consent"
-                            className="mr-2 mt-1 h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                            checked={hasConsented}
-                            onChange={(e) => setHasConsented(e.target.checked)}
-                            required // Make consent mandatory for registration
-                        />
-                        <label htmlFor="consent" className="text-gray-300 text-sm">
-                            I agree to the <span
-                                onClick={() => navigateTo('privacy-policy')} // MODIFICATION: Make text clickable
-                                className="text-blue-300 hover:underline cursor-pointer"
-                            >Privacy Policy</span> and consent to data usage for improving AI services.
-                        </label>
-                    </div>
-                )}
-                <div className="flex items-center justify-between mb-4">
-                    <button
-                        type="submit"
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl focus:outline-none focus:shadow-outline transition duration-200 ease-in-out transform hover:scale-105"
-                    >
-                        {isLogin ? 'Login' : 'Register'}
-                    </button>
-                </div>
-                <p className="text-center text-sm text-gray-300">
-                    {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-                    <button
-                        type="button"
-                        onClick={() => setIsLogin(!isLogin)}
-                        className="text-blue-300 hover:text-blue-200 font-bold focus:outline-none"
-                    >
-                        {isLogin ? 'Register here' : 'Login here'}
-                    </button>
-                </p>
-            </form>
-            <MessageBox message={messageBoxContent} onClose={closeMessageBox} />
-        </div>
-    );
-};
-
-
 // --- Main App Component (Controls page routing and character state) ---
 const App = () => {
-    const [currentPage, setCurrentPage] = useState('auth'); // Start at auth page
+    const [currentPage, setCurrentPage] = useState('home'); // State to control the active page
     const [customCharacters, setCustomCharacters] = useState([]); // State for user-created characters
     const [isLoggedIn, setIsLoggedIn] = useState(false); // New state for login status
     const [userName, setUserName] = useState(''); // New state for user name
@@ -1413,58 +1410,6 @@ const App = () => {
             avatar: createIconSvgDataUri(genericPersonIconPath, '#C7D2FE', 100, 100),
         },
     ];
-
-    // Firebase Authentication and User ID setup - Kept for potential future use/context, though local storage handles user data
-    useEffect(() => {
-        if (!auth) {
-            console.error("Firebase Auth is not initialized.");
-            return;
-        }
-
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                // userId is set for Firebase context, but isLoggedIn and user details are managed by AuthPage
-                // setUserId(user.uid); // Not directly used for local storage auth flow
-                // setIsAuthReady(true); // Not directly used for local storage auth flow
-                console.log("Firebase Auth state changed. User:", user.uid);
-            } else {
-                try {
-                    await signInAnonymously(auth);
-                    console.log("Signed in anonymously via Firebase.");
-                } catch (error) {
-                    console.error("Firebase anonymous sign-in failed:", error);
-                }
-            }
-        });
-
-        // Attempt to sign in with custom token if available (from Canvas environment)
-        const signInWithToken = async () => {
-            if (initialAuthToken) {
-                try {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                    console.log("Signed in with custom token via Firebase.");
-                } catch (error) {
-                    console.error("Firebase custom token sign-in failed:", error);
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (anonError) {
-                        console.error("Firebase anonymous sign-in fallback failed:", anonError);
-                    }
-                }
-            } else {
-                try {
-                    await signInAnonymously(auth);
-                } catch (anonError) {
-                    console.error("Firebase anonymous sign-in failed:", anonError);
-                }
-            }
-        };
-
-        signInWithToken();
-
-        return () => unsubscribe(); // Cleanup auth listener
-    }, []); // Empty dependency array means this runs once on mount
-
 
     // Callback function to update messages for the active chat in chatHistory
     const handleMessagesChange = useCallback((newMessages) => {
@@ -1691,7 +1636,7 @@ const App = () => {
             case 'auth':
                 return <AuthPage navigateTo={navigateTo} setIsLoggedIn={setIsLoggedIn} setUserName={setUserName} setUserAvatar={setUserAvatar} setUserEmail={setUserEmail} />;
             case 'create-character':
-                return <CharacterCreationPage navigateTo={navigateTo} onSaveCharacter={handleSaveNewCharacter} showMessageBox={showAppMessageBox} />;
+                return <CharacterCreationPage navigateTo={navigateTo} onSaveCharacter={handleSaveNewCharacter} />;
             case 'privacy-policy': // MODIFICATION: New case for Privacy Policy page
                 return <PrivacyPolicyPage navigateTo={navigateTo} />;
             case 'account-settings': // NEW: Account Settings page
@@ -1713,18 +1658,16 @@ const App = () => {
     return (
         <div className="min-h-screen w-screen bg-gray-950 flex flex-col font-inter">
             <div className="fixed top-0 left-0 w-full bg-gray-900 z-50 px-6 py-4 flex justify-between items-center border-b border-gray-700">
-                {isLoggedIn && ( // Only show hamburger menu if logged in
-                    <button
-                        onClick={() => setIsHistoryOpen(!isHistoryOpen)} // Re-added toggle button
-                        className="p-2 rounded-full bg-gray-700 text-gray-100 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        {isHistoryOpen ? (
-                            <img src={leftArrowIconUri} alt="Close Sidebar" className="h-6 w-6 text-gray-100" />
-                        ) : (
-                            <img src={hamburgerIconUri} alt="Open Sidebar" className="h-6 w-6 text-gray-100" />
-                        )}
-                    </button>
-                )}
+                <button
+                    onClick={() => setIsHistoryOpen(!isHistoryOpen)} // Re-added toggle button
+                    className="p-2 rounded-full bg-gray-700 text-gray-100 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    {isHistoryOpen ? (
+                        <img src={leftArrowIconUri} alt="Close Sidebar" className="h-6 w-6 text-gray-100" />
+                    ) : (
+                        <img src={hamburgerIconUri} alt="Open Sidebar" className="h-6 w-6 text-gray-100" />
+                    )}
+                </button>
 
                 <button
                     onClick={() => { navigateTo('home'); setIsHistoryOpen(false); }} // Set isHistoryOpen to false on home navigation
@@ -1732,7 +1675,7 @@ const App = () => {
                     aria-label="Go to Home"
                 >
                     <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-300 to-purple-400 text-transparent bg-clip-text
-                                 group-hover:from-blue-200 group-hover:to-purple-300 transition-all duration-200">
+                                   group-hover:from-blue-200 group-hover:to-purple-300 transition-all duration-200">
                         Emotica
                     </h1>
                 </button>
@@ -1772,66 +1715,64 @@ const App = () => {
 
             <div className="flex flex-1 relative overflow-hidden pt-20">
                 {/* Re-added sidebar toggle logic */}
-                {isLoggedIn && ( // Only show sidebar if logged in
-                    <div className={`
-                        fixed inset-y-0 left-0 w-64 bg-gray-800 p-4 flex-col z-60
-                        transform transition-transform duration-300 ease-in-out
-                        ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full'}
-                        ${isHistoryOpen ? 'flex' : 'hidden'}
-                        pt-20
-                        `}>
-                        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 pt-4">
-                            <h3 className="text-xl font-bold text-gray-100 mb-4">Recent Chats</h3>
-                            <button
-                                onClick={handleNewChatSidebar}
-                                className="w-full flex items-center justify-center py-3 px-4 mb-4 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition duration-200 ease-in-out transform hover:scale-105"
-                            >
-                                <img src={newChatIconUri} alt="New Chat" className="h-5 w-5 mr-2" />
-                                New Chat
-                            </button>
+                <div className={`
+                    fixed inset-y-0 left-0 w-64 bg-gray-800 p-4 flex-col z-60
+                    transform transition-transform duration-300 ease-in-out
+                    ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full'}
+                    ${isHistoryOpen ? 'flex' : 'hidden'}
+                    pt-20
+                    `}>
+                    <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 pt-4">
+                        <h3 className="text-xl font-bold text-gray-100 mb-4">Recent Chats</h3>
+                        <button
+                            onClick={handleNewChatSidebar}
+                            className="w-full flex items-center justify-center py-3 px-4 mb-4 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition duration-200 ease-in-out transform hover:scale-105"
+                        >
+                            <img src={newChatIconUri} alt="New Chat" className="h-5 w-5 mr-2" />
+                            New Chat
+                        </button>
 
-                            {chatHistory.length > 0 ? (
-                                chatHistory.map((chat) => (
-                                    <button
-                                        key={chat.id}
-                                        onClick={() => handleHistoryItemClick(chat.id)}
-                                        className="w-full flex flex-col items-start text-left text-gray-400 mb-3 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-150 group"
-                                    >
-                                        <div className="flex items-center w-full"> {/* Flex container for avatar and name */}
-                                            {/* Avatar for chat history item */}
-                                            <div className="rounded-full overflow-hidden w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-600 border border-gray-500 mr-3">
-                                                {chat.avatar ? (
-                                                    <img src={chat.avatar} alt={chat.characterName} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <img src={createInitialAvatar(chat.characterName)} alt={chat.characterName} className="w-full h-full object-cover" />
-                                                )}
-                                            </div>
-                                            <p className="font-semibold text-gray-100 group-hover:text-blue-300 transition-colors duration-150 text-lg truncate flex-1"> {/* Added flex-1 to truncate */}
-                                                {chat.characterName} {/* Headline of the chat */}
-                                            </p>
+                        {chatHistory.length > 0 ? (
+                            chatHistory.map((chat) => (
+                                <button
+                                    key={chat.id}
+                                    onClick={() => handleHistoryItemClick(chat.id)}
+                                    className="w-full flex flex-col items-start text-left text-gray-400 mb-3 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-150 group"
+                                >
+                                    <div className="flex items-center w-full"> {/* Flex container for avatar and name */}
+                                        {/* Avatar for chat history item */}
+                                        <div className="rounded-full overflow-hidden w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-600 border border-gray-500 mr-3">
+                                            {chat.avatar ? (
+                                                <img src={chat.avatar} alt={chat.characterName} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <img src={createInitialAvatar(chat.characterName)} alt={chat.characterName} className="w-full h-full object-cover" />
+                                            )}
                                         </div>
-                                        {/* Display the last message snippet with timestamp below */}
-                                        {chat.messages && chat.messages.length > 0 && (
-                                            <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors duration-150 truncate mt-1 w-full pl-11"> {/* Adjusted padding */}
-                                                {chat.messages[chat.messages.length - 1].text}
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors duration-150 mt-1 w-full pl-11"> {/* Adjusted padding */}
-                                            {chat.timestamp.toLocaleString()} {/* Display full date and time */}
+                                        <p className="font-semibold text-gray-100 group-hover:text-blue-300 transition-colors duration-150 text-lg truncate flex-1"> {/* Added flex-1 to truncate */}
+                                            {chat.characterName} {/* Headline of the chat */}
                                         </p>
-                                    </button>
-                                ))
-                            ) : (
-                                <div className="text-gray-500 text-sm mt-4 text-center">No recent chats. Start a conversation!</div>
-                            )}
-                        </div>
+                                    </div>
+                                    {/* Display the last message snippet with timestamp below */}
+                                    {chat.messages && chat.messages.length > 0 && (
+                                        <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors duration-150 truncate mt-1 w-full pl-11"> {/* Adjusted padding */}
+                                            {chat.messages[chat.messages.length - 1].text}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors duration-150 mt-1 w-full pl-11"> {/* Adjusted padding */}
+                                        {chat.timestamp.toLocaleString()} {/* Display full date and time */}
+                                    </p>
+                                </button>
+                            ))
+                        ) : (
+                            <div className="text-gray-500 text-sm mt-4 text-center">No recent chats. Start a conversation!</div>
+                        )}
                     </div>
-                )}
+                </div>
 
                 {/* Main Card (content area) - now takes full width when sidebar is closed */}
                 <div className={`bg-gray-900 rounded-xl shadow-2xl p-6 w-full flex-1 flex flex-col
                                  transition-all duration-300 ease-in-out
-                                 ${isLoggedIn && isHistoryOpen ? 'ml-64' : 'ml-0'}`}> {/* Adjusted ml-0 when not logged in */}
+                                 ${isHistoryOpen ? 'ml-64' : 'ml-0'}`}>
                     {renderPage()}
                 </div>
             </div>
