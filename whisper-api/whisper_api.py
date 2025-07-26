@@ -16,8 +16,8 @@ from transformers import Wav2Vec2Processor, Wav2Vec2Model # For Wav2Vec2
 # Import TensorFlow for loading and using your .h5 model
 import tensorflow as tf
 # Using the Functional API for more explicit control over connections
-from tensorflow.keras.models import Model # Model is used, Sequential is not needed here
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, BatchNormalization, Attention # Added Attention
+from tensorflow.keras.models import Model, Sequential # Added Sequential for consistency if needed, but Model is used
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, Flatten, BatchNormalization # Added BatchNormalization
 from tensorflow.keras import regularizers # Added for L2 regularization
 
 app = Flask(__name__)
@@ -26,17 +26,15 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 Megabytes
 
 # --- Configuration ---
-# MODIFIED: Changed Whisper model size for better accuracy
-WHISPER_MODEL_SIZE = "small" # Consider "medium" for even better accuracy if resources allow
+# MODIFIED: Changed Whisper model size to "base" to fit within Render's free tier memory limits
+WHISPER_MODEL_SIZE = "base" # Changed from "small"
 
 # IMPORTANT: Update this path to your trained Keras model's .h5 file
-# This path MUST match the `checkpoint_path` in your training script.
-EMOTION_MODEL_PATH = r"C:\Users\chenz\Documents\lstm_attention_best_weights.weights.h5" # Corrected path
+EMOTION_MODEL_PATH = r"C:\Users\chenz\Documents\lstm_attention_best_weights.weights.h5" # Updated path to the new model
 
 # Define the target sample rate and feature length for Wav2Vec2 features
 TARGET_WHISPER_SR = 16000 # Whisper models are optimized for 16kHz
 TARGET_WAV2VEC2_SR = 16000
-# This must EXACTLY match the input_timesteps from your HDF5DataGenerator setup
 TARGET_WAV2VEC2_FEATURE_LENGTH = 716 # Based on your HDF5 file shape (716, 768)
 
 # FIX: Moved WAV2VEC2_MODEL_NAME definition here so it's available before use
@@ -56,6 +54,7 @@ EMOTION_CLASSES = ["neutral", "calm", "happy", "sad", "angry", "fearful", "disgu
 
 # --- Initialize Wav2Vec2 Processor and Model ---
 print("Loading Wav2Vec2 Processor and Model...")
+# FIX: Corrected typo from Wav22Vec2Processor to Wav2Vec2Processor
 wav2vec2_processor = Wav2Vec2Processor.from_pretrained(WAV2VEC2_MODEL_NAME)
 wav2vec2_model = Wav2Vec2Model.from_pretrained(WAV2VEC2_MODEL_NAME)
 wav2vec2_model.eval() # Set model to evaluation mode
@@ -66,36 +65,38 @@ wav2vec2_model.to(device)
 print(f"Wav2Vec2 Model loaded and moved to {device} device.")
 
 
-# --- Define Emotion Recognition Model Architecture (CORRECTED) ---
-# This function defines the Keras model architecture based on your provided training script.
-# It should precisely match the architecture your 'lstm_attention_best_weights.weights.h5'
-# file was trained with, including layer types, units, return_sequences, regularization,
-# dropout rates, and the presence of the Attention layer.
+# --- Define Emotion Recognition Model Architecture ---
+# This function defines the Keras model architecture based on your provided model summary
+# and the wav2vec2 feature shape. It should precisely match the architecture your
+# 'best_weights.weights.h5' file was trained with.
+#
+# The input_shape=(716, 768) is derived directly from your wav2vec2 features.
 def create_emotion_model(input_shape=(TARGET_WAV2VEC2_FEATURE_LENGTH, 768), num_classes=len(EMOTION_CLASSES)):
+    # Using the Functional API for more explicit control over connections
     inputs = Input(shape=input_shape, name='input_features')
 
-    # First Bidirectional LSTM Block (Matching Training Script)
-    x = Bidirectional(LSTM(64, return_sequences=True, kernel_regularizer=regularizers.l2(0.005)), name='bi_lstm_1')(inputs)
-    x = BatchNormalization(name='batch_norm_1')(x)
-    x = Dropout(0.5, name='dropout_1')(x)
+    # First Bidirectional LSTM layer - MATCHES TRAINING OPTION A
+    x = Bidirectional(LSTM(64, return_sequences=True, kernel_regularizer=regularizers.l2(0.001)),
+                      name='bidirectional_lstm')(inputs)
+    x = BatchNormalization(name='batch_normalization')(x) # MATCHES TRAINING OPTION A
+    x = Dropout(0.4, name='dropout')(x) # MATCHES TRAINING OPTION A
 
-    # --- Attention Mechanism (Added to Match Training Script) ---
-    attention_output = Attention(name='self_attention_layer')([x, x])
+    # Second Bidirectional LSTM layer - MATCHES TRAINING OPTION A
+    x = Bidirectional(LSTM(32, kernel_regularizer=regularizers.l2(0.001)),
+                      name='bidirectional_lstm_1')(x) # `return_sequences=False` by default
+    x = BatchNormalization(name='batch_normalization_1')(x) # MATCHES TRAINING OPTION A
+    x = Dropout(0.5, name='dropout_1')(x) # MATCHES TRAINING OPTION A
 
-    # Second Bidirectional LSTM Block (Matching Training Script)
-    x = Bidirectional(LSTM(32, kernel_regularizer=regularizers.l2(0.005)), name='bi_lstm_2')(attention_output) # Connect to attention_output
-    x = BatchNormalization(name='batch_norm_2')(x)
-    x = Dropout(0.6, name='dropout_2')(x)
+    # No Flatten layer needed, as the last LSTM's output is already 2D (batch_size, units*2)
+    # and directly compatible with Dense layer.
+    # Output of Bidirectional(LSTM(32)) without return_sequences=True is (None, 32*2) = (None, 64)
 
-    # Classification Part (Matching Training Script)
-    output_tensor = Dense(num_classes, activation='softmax', kernel_regularizer=regularizers.l2(0.01), name='output_dense')(x)
+    # Final Dense layer - MATCHES TRAINING OPTION A
+    outputs = Dense(num_classes, activation='softmax', kernel_regularizer=regularizers.l2(0.001), name='dense')(x)
 
-    # Create the model by specifying its inputs and outputs
-    model = Model(inputs=inputs, outputs=output_tensor, name='LSTM_Attention_Model')
-
+    model = Model(inputs=inputs, outputs=outputs)
     # Compile is necessary for a functional model to be fully built before loading weights sometimes,
     # but the optimizer/loss do not need to match the training ones for loading weights, just for further training.
-    # We use a dummy compile here, as the loaded weights already define the model's learned state.
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
@@ -114,9 +115,7 @@ try:
 
 except Exception as e:
     print(f"ERROR: Could not load emotion model from {EMOTION_MODEL_PATH}. Reason: {e}")
-    print("Please ensure the model path and architecture in create_emotion_model() are correct and match your training script.")
-    print("Proceeding with simulated emotion detection for now.")
-    emotion_model = None # Ensure it's None if loading fails
+    print("Proceeding with simulated emotion detection for now. Please ensure the model path and architecture are correct.")
 
 def predict_emotion(audio_data_16khz, sample_rate_16khz):
     """
@@ -179,7 +178,7 @@ def predict_emotion(audio_data_16khz, sample_rate_16khz):
             print(f"Emotion model input shape: {model_input.shape}")
 
             # --- MODEL INFERENCE ---
-            predictions = emotion_model.predict(model_input, verbose=0) # Set verbose to 0 for cleaner output
+            predictions = emotion_model.predict(model_input)
             print(f"Raw emotion model predictions: {predictions}")
             predicted_label_idx = np.argmax(predictions[0]) # Assuming batch prediction and one-hot output
             
