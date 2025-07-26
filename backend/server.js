@@ -28,11 +28,11 @@ const WHISPER_API_URL = "http://localhost:5001/transcribe_and_emotion";
 
 // Silence Detection Parameters
 // MODIFIED: Increased silence threshold for more natural pauses
-const SILENCE_THRESHOLD_MS = 1200; // milliseconds of silence to detect end of utterance
+const SILENCE_THRESHOLD_MS = 1500; // milliseconds of silence to detect end of utterance (Increased from 1200 to 1500)
 // MODIFIED: Adjusted volume threshold for potentially better silence detection
-const SILENCE_VOLUME_THRESHOLD = 70; // Adjust this value based on your microphone's noise floor (e.g., 50-200)
+const SILENCE_VOLUME_THRESHOLD = 50; // Reduced from 70 to 50
 // Minimum audio duration (in seconds) to consider for processing
-const MIN_AUDIO_DURATION_SECONDS = 1.0;
+const MIN_AUDIO_DURATION_SECONDS = 0.8; // Reduced from 1.0 second to 0.8
 // Assuming 48kHz sample rate, 16-bit PCM, mono (2 bytes per sample)
 const SAMPLE_RATE = 48000;
 const BYTES_PER_SAMPLE = 2; // for Int16Array
@@ -102,11 +102,19 @@ wss.on('connection', ws => {
     // This is a simple form of Voice Activity Detection (VAD)
     function calculateRMS(buffer) {
         if (buffer.length === 0) return 0;
-        // FIX: Create a new Int16Array from a slice of the buffer's ArrayBuffer.
+        // FIX: Ensure the buffer length is an even number for Int16Array conversion
+        const byteLength = buffer.byteLength;
+        const alignedByteLength = byteLength % 2 === 0 ? byteLength : byteLength - 1; // Ensure even length
+
+        // Create a new Int16Array from a slice of the buffer's ArrayBuffer.
         // This guarantees that the Int16Array starts at a byte-aligned position,
         // preventing the "start offset of Int16Array should be a multiple of 2" error.
-        const pcmData = new Int16Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+        // Use the alignedByteLength for the slice.
+        const pcmData = new Int16Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + alignedByteLength));
         
+        // If after slicing, pcmData is empty (e.g., original buffer was 1 byte), return 0.
+        if (pcmData.length === 0) return 0;
+
         let sumOfSquares = 0;
         for (let i = 0; i < pcmData.length; i++) {
             sumOfSquares += pcmData[i] * pcmData[i];
@@ -202,6 +210,13 @@ wss.on('connection', ws => {
         const fullAudioData = Buffer.concat(audioBuffer);
         const audioByteLength = fullAudioData.length;
         resetAudioProcessing(); // Reset buffer immediately after taking data
+
+        // NEW: Explicitly check if the concatenated buffer is empty
+        if (fullAudioData.length === 0) {
+            console.log('Server: Concatenated audio buffer is empty. Skipping Whisper API call.');
+            isProcessingUtterance = false; // Reset flag
+            return;
+        }
 
         // Final check for minimum audio bytes after concatenation
         if (audioByteLength < MIN_AUDIO_BUFFER_BYTES_FOR_PROCESSING) {
@@ -323,7 +338,7 @@ wss.on('connection', ws => {
             if (!sttErrorSentDuringCall && (currentTime - lastSttErrorTime > STT_ERROR_COOLDOWN_MS)) {
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'error', message: transcribedText }));
-                    console.log(`Server: Dispatched error message to client: "${transcribedText}" (debounced)`);
+                    console.log(`Server: Dispatched error to client: "${transcribedText}" (debounced)`);
                 }
                 lastSttErrorTime = currentTime; // Update last error time
                 sttErrorSentDuringCall = true; // Set flag to true for this call session
@@ -445,7 +460,7 @@ wss.on('connection', ws => {
             botSpeaking = false; // Reset bot speaking flag after sending audio
 
             // --- STEP 5: Send response text back to frontend (optional, for chat display) ---
-            // Only send if llmText.trim() is not empty
+            // Only send if llmText.trim() !== ""
             if (llmText.trim() !== "") {
                 if (ws.readyState === WebSocket.OPEN) { // Check WebSocket state before sending
                     console.log(`Server: Preparing to dispatch bot response: "Bot: ${llmText}"`);
