@@ -1,0 +1,33 @@
+# Environment variables (CRITICAL for security)
+.env
+
+# Node.js dependencies (for both frontend and backend)
+node_modules/
+
+# React build output (from frontend/build or frontend/dist)
+frontend/build/
+frontend/dist/ # Include if Vite outputs to 'dist'
+
+# Python dependencies/environments
+venv/
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+
+# Editor directories and files (common ones)
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
