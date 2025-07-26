@@ -28,7 +28,7 @@ const WHISPER_API_URL = "http://localhost:5001/transcribe_and_emotion";
 
 // Silence Detection Parameters
 // MODIFIED: Increased silence threshold for more natural pauses
-const SILENCE_THRESHOLD_MS = 1500; // milliseconds of silence to detect end of utterance
+const SILENCE_THRESHOLD_MS = 1200; // milliseconds of silence to detect end of utterance
 // MODIFIED: Adjusted volume threshold for potentially better silence detection
 const SILENCE_VOLUME_THRESHOLD = 70; // Adjust this value based on your microphone's noise floor (e.g., 50-200)
 // Minimum audio duration (in seconds) to consider for processing
