@@ -1,12 +1,10 @@
 # Emotica
 
-# [Your Project Name] - Emotion-Aligned Conversational AI Assistant
+# Emotica - Emotion-Aligned Conversational AI Assistant
 
 ## 🌟 Project Overview
 
 **Emotica** is an innovative real-time conversational AI assistant designed to understand and respond to user emotions. By integrating Speech-to-Text (STT), Emotion Recognition, a Large Language Model (LLM), and Text-to-Speech (TTS), the application provides a dynamic and empathetic voice-based interaction experience. It aims to create a more natural and understanding dialogue by aligning the AI's responses with the user's detected emotional state.
-
-This project was developed as a Final Year Project ([FYP/Capstone Project - specify if applicable]) to explore the integration of various AI technologies for enhanced human-computer interaction.
 
 ## ✨ Features
 
