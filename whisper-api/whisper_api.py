@@ -26,8 +26,8 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 Megabytes
 
 # --- Configuration ---
-# MODIFIED: Changed Whisper model size to "base" to fit within Render's free tier memory limits
-WHISPER_MODEL_SIZE = "base" # Changed from "small"
+# MODIFIED: Changed Whisper model size to "tiny.en" to fit within Render's free tier memory limits
+WHISPER_MODEL_SIZE = "tiny.en" # Changed from "base" to a smaller model
 
 # IMPORTANT: Update this path to your trained Keras model's .h5 file
 EMOTION_MODEL_PATH = r"C:\Users\chenz\Documents\lstm_attention_best_weights.weights.h5" # Updated path to the new model
@@ -282,4 +282,4 @@ def health_check():
 
 if __name__ == '__main__':
     # Running on port 5001 to avoid conflict with Node.js 8080
-    app.run(host='0.0.0.0', port=5001, debug=True) # Added debug=True for more verbose output during development
+    app.run(host='0.0.0.0', port=5001, debug=True) 
