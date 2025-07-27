@@ -16,8 +16,8 @@ from transformers import Wav2Vec2Processor, Wav2Vec2Model # For Wav2Vec2
 # Import TensorFlow for loading and using your .h5 model
 import tensorflow as tf
 # Using the Functional API for more explicit control over connections
-from tensorflow.keras.models import Model, Sequential # Added Sequential for consistency if needed, but Model is used
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, Flatten, BatchNormalization # Added BatchNormalization
+from tensorflow.keras.models import Model # Sequential is not needed here
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, BatchNormalization # Flatten is not needed here
 from tensorflow.keras import regularizers # Added for L2 regularization
 
 app = Flask(__name__)
@@ -30,7 +30,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 Megabytes
 WHISPER_MODEL_SIZE = "tiny.en" # Changed from "base" to a smaller model
 
 # IMPORTANT: Update this path to your trained Keras model's .h5 file
-EMOTION_MODEL_PATH = r"C:\Users\chenz\Documents\lstm_attention_best_weights.weights.h5" # Updated path to the new model
+# This path MUST be relative to the 'whisper-api' directory when deployed on Render.
+EMOTION_MODEL_PATH = "lstm_attention_best_weights.weights.h5" # CORRECTED: Changed to relative path
 
 # Define the target sample rate and feature length for Wav2Vec2 features
 TARGET_WHISPER_SR = 16000 # Whisper models are optimized for 16kHz
@@ -54,7 +55,6 @@ EMOTION_CLASSES = ["neutral", "calm", "happy", "sad", "angry", "fearful", "disgu
 
 # --- Initialize Wav2Vec2 Processor and Model ---
 print("Loading Wav2Vec2 Processor and Model...")
-# FIX: Corrected typo from Wav22Vec2Processor to Wav2Vec2Processor
 wav2vec2_processor = Wav2Vec2Processor.from_pretrained(WAV2VEC2_MODEL_NAME)
 wav2vec2_model = Wav2Vec2Model.from_pretrained(WAV2VEC2_MODEL_NAME)
 wav2vec2_model.eval() # Set model to evaluation mode
@@ -116,6 +116,7 @@ try:
 except Exception as e:
     print(f"ERROR: Could not load emotion model from {EMOTION_MODEL_PATH}. Reason: {e}")
     print("Proceeding with simulated emotion detection for now. Please ensure the model path and architecture are correct.")
+    emotion_model = None # Ensure it's None if loading fails
 
 def predict_emotion(audio_data_16khz, sample_rate_16khz):
     """
@@ -280,6 +281,6 @@ def transcribe_and_emotion_audio():
 def health_check():
     return "Whisper & Emotion API is running!", 200
 
-if __name__ == '__main__':
-    # Running on port 5001 to avoid conflict with Node.js 8080
-    app.run(host='0.0.0.0', port=5001, debug=True) 
+# The app.run() block is removed as Gunicorn handles the server startup.
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5001, debug=True)
