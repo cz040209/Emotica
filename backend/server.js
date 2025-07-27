@@ -28,9 +28,9 @@ const WHISPER_API_URL = "http://localhost:5001/transcribe_and_emotion";
 
 // Silence Detection Parameters
 // MODIFIED: Increased silence threshold for more natural pauses
-const SILENCE_THRESHOLD_MS = 1500; // milliseconds of silence to detect end of utterance (Increased from 1200 to 1500)
-// MODIFIED: Adjusted volume threshold for potentially better silence detection
-const SILENCE_VOLUME_THRESHOLD = 50; // Reduced from 70 to 50
+const SILENCE_THRESHOLD_MS = 2000; // milliseconds of silence to detect end of utterance (Increased from 1200 to 1500)
+// MODIFIED: Adjusted volume threshold for potentially better microphone reception
+const SILENCE_VOLUME_THRESHOLD = 20; // Reduced from 30 to 20 for increased sensitivity
 // Minimum audio duration (in seconds) to consider for processing
 const MIN_AUDIO_DURATION_SECONDS = 0.8; // Reduced from 1.0 second to 0.8
 // Assuming 48kHz sample rate, 16-bit PCM, mono (2 bytes per sample)
@@ -409,9 +409,24 @@ wss.on('connection', ws => {
             return;
         }
 
-        // MODIFIED: Added instruction to the prompt for a single, direct response
-        // Also added an instruction to choose the single best option if it generates multiple.
-        const enhancedPrompt = `User's input (emotion: ${userEmotion}): "${text}"\n\nAs a conversational AI, provide a single, direct, and empathetic response to the user based on their input and emotion. Do not offer multiple options or analyze the input. Just give a direct conversational reply.`;
+        // NEW: Emotion-Aligned Prompt Templates
+        const promptTemplates = {
+            "neutral": `USER: {user_input}\nEMOTION: Neutral\nINTENT: Neutral\nRespond with clarity, keep tone balanced and neutral, and avoid unnecessary emotional cues.`,
+            "calm": `USER: {user_input}\nEMOTION: Calm\nINTENT: Match their calmness\nRespond in a relaxed tone. Match their calmness while offering thoughtful support or feedback.`,
+            "happy": `USER: {user_input}\nEMOTION: Happy\nINTENT: Sharing joy\nRespond with enthusiasm and positivity. Acknowledge their happiness and mirror their joy.`,
+            "sad": `USER: {user_input}\nEMOTION: Sad\nINTENT: Venting\nOffer emotional validation, avoid advice unless asked, and express support with a soft and kind tone.`,
+            "angry": `USER: {user_input}\nEMOTION: Angry\nINTENT: Seeking support or venting\nAcknowledge frustration without judgment, and offer grounded, calming suggestions.`,
+            "fearful": `USER: {user_input}\nEMOTION: Fearful\nINTENT: Reassurance\nRespond gently. Reassure the user and reduce their anxiety by focusing on safety, clarity, and empathy.`,
+            "disgust": `USER: {user_input}\nEMOTION: Disgust\nINTENT: Expressing rejection or discomfort\nAcknowledge their discomfort without amplifying negativity. Stay respectful and neutral.`,
+            "surprised": `USER: {user_input}\nEMOTION: Surprised\nINTENT: Processing new info\nMatch surprise gently. Ask open-ended questions or offer confirmation to help them process the surprise.`,
+        };
+
+        // Get the appropriate template, default to neutral if emotion is not found
+        const selectedTemplate = promptTemplates[userEmotion.toLowerCase()] || promptTemplates["neutral"];
+
+        // Replace the {user_input} placeholder in the selected template
+        const enhancedPrompt = selectedTemplate.replace('{user_input}', text);
+
         conversationHistory.push({ role: "user", parts: [{ text: enhancedPrompt }] });
 
         try {
