@@ -27,9 +27,14 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const WHISPER_API_URL = "http://localhost:5001/transcribe_and_emotion";
 
 // Silence Detection Parameters
-// MODIFIED: Increased silence threshold for more natural pauses
-const SILENCE_THRESHOLD_MS = 2000; // milliseconds of silence to detect end of utterance (Increased from 1200 to 1500)
+// MODIFIED: Silence threshold for detecting END OF USER UTTERANCE (e.g., a pause in speech)
+const UTTERANCE_SILENCE_THRESHOLD_MS = 1000; // milliseconds of silence to detect end of utterance (e.g., 1 second)
+// NEW: Silence threshold for automatically ENDING THE CALL due to prolonged inactivity
+const CALL_END_SILENCE_THRESHOLD_MS = 5000; // 5 seconds of continuous silence to end the call
+
 // MODIFIED: Adjusted volume threshold for potentially better microphone reception
+// You might need to tune this. Higher value = less sensitive (more likely to detect silence).
+// Lower value = more sensitive (less likely to detect silence, might pick up background noise).
 const SILENCE_VOLUME_THRESHOLD = 20; // Reduced from 30 to 20 for increased sensitivity
 // Minimum audio duration (in seconds) to consider for processing
 const MIN_AUDIO_DURATION_SECONDS = 0.8; // Reduced from 1.0 second to 0.8
@@ -50,7 +55,8 @@ const STT_ERROR_COOLDOWN_MS = 5000; // Only send STT error message every 5 secon
 // MODIFICATION: Flag to ensure error message is sent only once per call session
 let sttErrorSentDuringCall = false;
 
-console.log(`Server Config: SILENCE_THRESHOLD_MS: ${SILENCE_THRESHOLD_MS}ms`);
+console.log(`Server Config: UTTERANCE_SILENCE_THRESHOLD_MS: ${UTTERANCE_SILENCE_THRESHOLD_MS}ms`);
+console.log(`Server Config: CALL_END_SILENCE_THRESHOLD_MS: ${CALL_END_SILENCE_THRESHOLD_MS}ms`);
 console.log(`Server Config: SILENCE_VOLUME_THRESHOLD: ${SILENCE_VOLUME_THRESHOLD}`);
 console.log(`Server Config: MIN_AUDIO_BUFFER_BYTES_FOR_PROCESSING: ${MIN_AUDIO_BUFFER_BYTES_FOR_PROCESSING} bytes`);
 console.log(`Server Config: MIN_AUDIO_CHUNKS_FOR_PROCESSING: ${MIN_AUDIO_CHUNKS_FOR_PROCESSING} chunks`);
@@ -97,6 +103,7 @@ wss.on('connection', ws => {
     let conversationHistory = []; // To maintain context for Gemini
     let isProcessingUtterance = false; // Flag to prevent multiple concurrent processes
     let botSpeaking = false; // Flag to indicate if the bot is currently speaking
+    let callEndTimeoutId = null; // To store the timeout ID for prolonged silence to end the call
 
     // Function to calculate RMS (Root Mean Square) for volume detection
     // This is a simple form of Voice Activity Detection (VAD)
@@ -127,6 +134,8 @@ wss.on('connection', ws => {
         audioBuffer = [];
         silenceStartTimestamp = null;
         isProcessingUtterance = false;
+        clearTimeout(callEndTimeoutId); // Clear the call end timeout on reset
+        callEndTimeoutId = null; // Reset the timeout ID
         console.log('Server: Audio processing state reset.');
     };
 
@@ -137,7 +146,7 @@ wss.on('connection', ws => {
             if (message === 'start_audio_stream') {
                 console.log('Server: Frontend signaled start of audio stream. Resetting.');
                 resetAudioProcessing();
-                // MODIFICATION: Reset error cooldown and error sent flag on new stream start
+                // Reset error cooldown and error sent flag on new stream start
                 lastSttErrorTime = 0;
                 sttErrorSentDuringCall = false;
             } else if (message === 'stop_audio_stream') { // This signal will now only trigger a final flush if needed
@@ -145,11 +154,18 @@ wss.on('connection', ws => {
                 // Process any remaining audio if enough accumulated
                 if (audioBuffer.length >= MIN_AUDIO_CHUNKS_FOR_PROCESSING) { // Check against chunk count
                     console.log('Server: Processing remaining audio on stop_audio_stream signal.');
-                    await processCurrentUtterance();
+                    // AWAIT the processing of the last utterance before sending the call_ended signal
+                    await processCurrentUtterance(); 
                 } else {
                     console.log('Server: No significant audio to process on stop_audio_stream signal.');
-                    resetAudioProcessing();
                 }
+                // Now send the call_ended_by_server AFTER processing the last utterance (if any)
+                if (ws.readyState === WebSocket.OPEN) {
+                    console.log(`Server: Sending 'call_ended_by_server' due to manual stop.`);
+                    ws.send(JSON.stringify({ type: 'call_ended_by_server', reason: 'manual_stop' }));
+                }
+                // Finally, reset the audio processing state
+                resetAudioProcessing(); 
             } else {
                 console.log('Server: Received text message (non-audio):', message);
                 await sendTextToGeminiAndRespond(message, "neutral"); // Assume neutral emotion for direct text input
@@ -176,24 +192,35 @@ wss.on('connection', ws => {
                 if (silenceStartTimestamp === null) {
                     silenceStartTimestamp = Date.now(); // Start silence timer
                     console.log('Server: Silence started.');
-                } else if (Date.now() - silenceStartTimestamp > SILENCE_THRESHOLD_MS) {
-                    // Silence detected for long enough, process the accumulated audio
+                    // Start a timeout to end the call if silence persists for CALL_END_SILENCE_THRESHOLD_MS
+                    callEndTimeoutId = setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            console.log(`Server: Sending 'call_ended_by_server' due to ${CALL_END_SILENCE_THRESHOLD_MS / 1000}s prolonged silence.`);
+                            ws.send(JSON.stringify({ type: 'call_ended_by_server', reason: 'prolonged_silence' }));
+                        }
+                        resetAudioProcessing(); // Reset server-side state after call ends
+                    }, CALL_END_SILENCE_THRESHOLD_MS);
+
+                } else if (Date.now() - silenceStartTimestamp > UTTERANCE_SILENCE_THRESHOLD_MS) {
+                    // Silence detected for long enough to consider end of utterance
                     // Ensure enough audio has been buffered before processing
                     console.log(`Server: VAD Check - isProcessingUtterance: ${isProcessingUtterance}, audioBuffer.length: ${audioBuffer.length}, MIN_AUDIO_CHUNKS_FOR_PROCESSING: ${MIN_AUDIO_CHUNKS_FOR_PROCESSING}`);
                     if (!isProcessingUtterance && audioBuffer.length >= MIN_AUDIO_CHUNKS_FOR_PROCESSING) { // Check against chunk count
                         isProcessingUtterance = true; // Set flag to prevent re-triggering
-                        console.log(`Server: Silence detected (${SILENCE_THRESHOLD_MS}ms). Triggering utterance processing.`);
+                        console.log(`Server: Silence detected (${UTTERANCE_SILENCE_THRESHOLD_MS}ms). Triggering utterance processing.`);
                         await processCurrentUtterance();
                     } else {
                         console.log(`Server: Silence detected, but not triggering processing. Conditions: isProcessingUtterance=${isProcessingUtterance}, audioBuffer.length=${audioBuffer.length} (min ${MIN_AUDIO_CHUNKS_FOR_PROCESSING}).`);
                     }
                 }
             } else {
-                // User is speaking (above threshold), reset silence timer
+                // User is speaking (above threshold), reset silence timer and clear call end timeout
                 if (silenceStartTimestamp !== null) {
                     console.log('Server: Speech detected, resetting silence timer.');
                 }
                 silenceStartTimestamp = null;
+                clearTimeout(callEndTimeoutId); // Clear the call end timeout if speech resumes
+                callEndTimeoutId = null; // Reset the timeout ID
             }
         }
     });
@@ -203,15 +230,19 @@ wss.on('connection', ws => {
         console.log('Server: Entering processCurrentUtterance.');
         if (audioBuffer.length === 0) {
             console.log('Server: No audio in buffer to process for utterance.');
-            resetAudioProcessing();
+            // Do NOT call resetAudioProcessing here immediately.
+            // It will be called by the message handler or onclose.
             return;
         }
 
         const fullAudioData = Buffer.concat(audioBuffer);
         const audioByteLength = fullAudioData.length;
-        resetAudioProcessing(); // Reset buffer immediately after taking data
+        // Clear the audio buffer ONLY AFTER concatenating it for processing.
+        // This ensures subsequent audio chunks don't get added to this utterance.
+        audioBuffer = []; 
 
-        // NEW: Explicitly check if the concatenated buffer is empty
+
+        // Explicitly check if the concatenated buffer is empty
         if (fullAudioData.length === 0) {
             console.log('Server: Concatenated audio buffer is empty. Skipping Whisper API call.');
             isProcessingUtterance = false; // Reset flag
@@ -230,7 +261,7 @@ wss.on('connection', ws => {
         const parsedUrl = url.parse(WHISPER_API_URL);
         const client = parsedUrl.protocol === 'https:' ? https : http;
 
-        // MODIFICATION: Explicitly add padding to base64 string
+        // Explicitly add padding to base64 string
         let base64Audio = fullAudioData.toString('base64');
         while (base64Audio.length % 4 !== 0) {
             base64Audio += '=';
@@ -251,7 +282,7 @@ wss.on('connection', ws => {
 
         let transcribedText = "";
         let detectedEmotion = "neutral";
-        let isSystemMessage = false; // NEW: Flag to indicate if the transcription is a system message
+        let isSystemMessage = false; // Flag to indicate if the transcription is a system message
 
         try {
             console.log(`Server: Attempting to send audio data to Whisper & Emotion API at ${WHISPER_API_URL} (Buffer size: ${audioByteLength} bytes, Base64 string length: ${base64Audio.length}) using Node.js built-in HTTP module with JSON payload...`);
@@ -266,7 +297,7 @@ wss.on('connection', ws => {
                         if (res.statusCode >= 200 && res.statusCode < 300) {
                             resolve({ statusCode: res.statusCode, body: responseBody });
                         } else {
-                            // MODIFICATION: Log the full response body for 500 errors
+                            // Log the full response body for 500 errors
                             console.error(`Server: API returned status ${res.statusCode}: ${responseBody}`);
                             reject(new Error(`API returned status ${res.statusCode}: ${responseBody}`));
                         }
@@ -288,7 +319,7 @@ wss.on('connection', ws => {
             console.log('Server: Whisper Transcription:', transcribedText);
             console.log('Server: Detected Emotion:', detectedEmotion);
 
-            // NEW: Check if the transcription is a system message from Whisper API
+            // Check if the transcription is a system message from Whisper API
             const systemMessages = [
                 "Please speak a bit louder, I didn't catch that clearly.",
                 "Please speak a bit longer, I didn't catch that clearly.",
@@ -304,13 +335,13 @@ wss.on('connection', ws => {
             }
 
 
-            // MODIFICATION: Reset error cooldown and error sent flag on successful API call
+            // Reset error cooldown and error sent flag on successful API call
             lastSttErrorTime = 0;
             sttErrorSentDuringCall = false;
 
             // Send user's transcribed text to frontend
             if (ws.readyState === WebSocket.OPEN) {
-                // MODIFIED: Prefix with "Bot:" if it's a system message, otherwise "You:"
+                // Prefix with "Bot:" if it's a system message, otherwise "You:"
                 const messagePrefix = isSystemMessage ? 'Bot: ' : 'You: ';
                 console.log(`Server: Preparing to dispatch user transcription: "${messagePrefix}${transcribedText}"`);
                 ws.send(JSON.stringify({ type: 'message', text: `${messagePrefix}${transcribedText}` }));
@@ -330,29 +361,30 @@ wss.on('connection', ws => {
             }
 
         } catch (error) {
-            console.error('Server: Failed to connect to Whisper & Emotion API or API returned error:', error);
-            transcribedText = `Failed to connect to STT/Emotion API: ${error.message}`;
-
-            // MODIFICATION: Only send error message if cooldown has passed AND it hasn't been sent for this call session
-            const currentTime = Date.now();
-            if (!sttErrorSentDuringCall && (currentTime - lastSttErrorTime > STT_ERROR_COOLDOWN_MS)) {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'error', message: transcribedText }));
-                    console.log(`Server: Dispatched error to client: "${transcribedText}" (debounced)`);
-                }
-                lastSttErrorTime = currentTime; // Update last error time
-                sttErrorSentDuringCall = true; // Set flag to true for this call session
-            } else {
-                console.log(`Server: Suppressing duplicate STT/Emotion API error message due to cooldown or already sent this session.`);
+            console.error('Server: Gemini API or ElevenLabs TTS Error:', error);
+            let errorMessage = "Server: Sorry, I encountered an error trying to process that.";
+            // Check if the error message from ElevenLabs specifically mentions missing permissions
+            if (error.body && error.body.detail && error.body.detail.message && error.body.detail.message.includes("missing the permission")) {
+                errorMessage = "Server: ElevenLabs API key missing required permissions. Please check your ElevenLabs account settings.";
+            } else if (error.message.includes("API key")) { // General API key check
+                errorMessage = "Server: My AI brain or voice seems disconnected! Please check the API keys.";
             }
 
-            transcribedText = ""; // Clear text if there was a connection error
+            if (ws.readyState === WebSocket.OPEN) { // Check WebSocket state before sending
+                ws.send(JSON.stringify({ type: 'error', message: errorMessage }));
+                console.log(`Server: Dispatched error to client: "${errorMessage}"`);
+                ws.send(JSON.stringify({ type: 'message', text: errorMessage })); // Send as a regular message too for visibility
+                console.log(`Server: Dispatched fallback message to client: "${errorMessage}"`);
+            } else {
+                console.warn(`Server: WebSocket not open, cannot dispatch error or fallback message: "${errorMessage}"`);
+            }
+            botSpeaking = false; // Ensure flag is reset on error
         } finally {
             isProcessingUtterance = false; // Ensure flag is reset after processing attempt
             console.log('Server: Exiting processCurrentUtterance.');
         }
 
-        // MODIFIED: Ensure Gemini always receives a prompt
+        // Ensure Gemini always receives a prompt
         // Only send to Gemini if it's actual user speech, not a system message from Whisper
         if (transcribedText.trim() !== "" && !isSystemMessage) { // Added !isSystemMessage
             await sendTextToGeminiAndRespond(transcribedText, detectedEmotion); // Pass actualTextForGemini
@@ -367,7 +399,7 @@ wss.on('connection', ws => {
         }
     }
 
-    // NEW: Helper function to extract a single direct response from Gemini's output
+    // Helper function to extract a single direct response from Gemini's output
     function extractDirectResponse(geminiOutput) {
         // This regex looks for lines starting with "Option X (" and captures the text until the next option or end of string.
         // It's designed to extract the conversational part.
