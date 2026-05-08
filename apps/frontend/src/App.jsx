@@ -1,5 +1,30 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; // Import useRef for scrolling
 
+const ORCHESTRATOR_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8084/';
+const CLIENT_VAD_BUFFER_SIZE = 2048;
+const CLIENT_VAD_SPEECH_RMS = 0.018;
+const CLIENT_VAD_SILENCE_RMS = 0.012;
+const CLIENT_VAD_END_SILENCE_MS = 550;
+const CLIENT_VAD_PREROLL_CHUNKS = 4;
+
+const calculateFloatRms = (samples) => {
+    if (!samples.length) return 0;
+
+    let sumOfSquares = 0;
+    for (let i = 0; i < samples.length; i++) {
+        sumOfSquares += samples[i] * samples[i];
+    }
+    return Math.sqrt(sumOfSquares / samples.length);
+};
+
+const floatToPcm16Buffer = (samples) => {
+    const pcmData = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+        pcmData[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7FFF;
+    }
+    return pcmData.buffer;
+};
+
 // --- Helper function to generate a color from a string (for consistent avatar colors) ---
 const stringToColor = (str) => {
     let hash = 0;
@@ -55,8 +80,8 @@ const addCharacterIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000
 const newChatIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`; // Corrected: String.raw
 const hamburgerIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>`;
 const leftArrowIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>`;
-const startCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.107l-3.397 3.397a1 1 0 01-1.414 0l-3.397-3.397m5.656-5.656l3.397-3.397a1 1 0 010-1.414l-3.397-3.397"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>`;
-const endCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14L21 3m0 0l-7.962 7.962M21 3v7.962m0 0a3 3 0 01-3 3v2a3 3 0 01-3-3m-4 0a3 3 0 01-3-3v-2a3 3 0 013-3m0 0h4m-7 0a3 3 0 01-3-3v-2a3 3 0 013-3m0 0h4m0 0a3 3 0 01-3-3v-2a3 3 0 013-3"/></svg>`;
+const startCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v3"/><path d="M8 21h8"/></svg>`;
+const endCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.5v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 1.2 2.8 2 2 0 0 1 3.2.6h2a2 2 0 0 1 2 1.7c.1.9.4 1.8.8 2.6a2 2 0 0 1-.5 2.1L6.4 8.1a16 16 0 0 0 9.5 9.5l1.1-1.1a2 2 0 0 1 2.1-.5c.8.4 1.7.7 2.6.8a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/></svg>`;
 const videoCallIconSvgContent = String.raw`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.555-4.555A1 1 0 0121 6.445v11.11a1 1 0 01-1.445.89L15 14M5 18H3a2 2 0 01-2-2V8a2 2 0 012-2h2l3-3 3 3h2a2 2 0 012 2v8a2 2 0 01-2 2H5z"/></svg>`;
 
 const addCharacterIconUri = `data:image/svg+xml;base64,${btoa(addCharacterIconSvgContent)}`; // Re-added for "Create New"
@@ -141,96 +166,17 @@ const HomePage = ({ navigateTo, characters, defaultCharacters }) => { // Added d
     );
 };
 
-// --- Audio Visualizer Component ---
-const AudioVisualizer = ({ analyser, isBotSpeaking }) => {
-    const canvasRef = useRef(null);
-    const animationFrameId = useRef(null);
-
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            console.log('AudioVisualizer: Canvas ref is null. Not drawing.');
-            return;
-        }
-        if (!analyser) {
-            console.log('AudioVisualizer: Analyser prop is null. Cannot draw.');
-            return;
-        }
-
-        const canvasCtx = canvas.getContext('2d');
-        // Set canvas dimensions to match display size for crisp rendering
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-
-        const bufferLength = analyser.fftSize; // Use fftSize for waveform data
-        const dataArray = new Uint8Array(bufferLength);
-
-        const draw = () => {
-            animationFrameId.current = requestAnimationFrame(draw);
-
-            analyser.getByteTimeDomainData(dataArray); // Get waveform data
-
-            // Check if audio data is non-zero (i.e., sound is present)
-            // 128 is the midpoint for 8-bit unsigned data, meaning silence.
-            const hasSound = dataArray.some(value => value !== 128);
-
-            canvasCtx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
-            canvasCtx.fillStyle = 'rgba(0, 0, 0, 0)'; // Transparent background
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-            canvasCtx.lineWidth = 2;
-            // Change color based on who is speaking, or grey if no sound detected
-            canvasCtx.strokeStyle = hasSound
-                                    ? (isBotSpeaking ? 'rgb(100, 255, 100)' : 'rgb(50, 150, 255)') // Green for bot, blue for user
-                                    : 'rgba(150, 150, 150, 0.5)'; // Greyed out if no sound
-            canvasCtx.beginPath();
-
-            const sliceWidth = canvas.width * 1.0 / bufferLength;
-            let x = 0;
-
-            for (let i = 0; i < bufferLength; i++) {
-                const v = dataArray[i] / 128.0; // Normalize to 0-2
-                const y = v * canvas.height / 2; // Scale to canvas height
-
-                if (i === 0) {
-                    canvasCtx.moveTo(x, y);
-                } else {
-                    canvasCtx.lineTo(x, y);
-                }
-
-                x += sliceWidth;
-            }
-
-            canvasCtx.lineTo(canvas.width, canvas.height / 2); // Draw to the center line at the end
-            canvasCtx.stroke();
-        };
-
-        draw();
-
-        // Cleanup function for when component unmounts or dependencies change
-        return () => {
-            cancelAnimationFrame(animationFrameId.current);
-        };
-    }, [analyser, isBotSpeaking]); // Re-run effect if analyser or bot speaking state changes
-
-    return (
-        <canvas
-            ref={canvasRef}
-            className="w-full h-24 bg-gray-800 rounded-lg mt-4"
-            style={{ border: '1px solid #4A5568' }}
-        ></canvas>
-    );
-};
-
-
 // --- Voice Call Feature Component ---
 const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDetectedEmotion, characterName, wsRef, audioContext, analyserNode, onCallStateChange }) => {
     const [isCalling, setIsCalling] = useState(false);
     const mediaRecorderRef = useRef(null);
-    const audioChunksRef = []; // No longer a ref, just a local array for simplicity
     const audioSourceRef = useRef(null); // Reference for audio source node
     const scriptProcessorRef = useRef(null); // Reference for ScriptProcessorNode
     const streamRef = useRef(null); // Reference to the MediaStream from getUserMedia
+    const vadSpeakingRef = useRef(false);
+    const vadLastVoiceAtRef = useRef(0);
+    const vadSpeechStartedAtRef = useRef(0);
+    const vadPreRollRef = useRef([]);
 
     // Ref to hold the latest isCalling state for cleanup
     const isCallingRef = useRef(isCalling);
@@ -238,8 +184,22 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
         isCallingRef.current = isCalling; // Keep the ref updated with the latest isCalling state
     }, [isCalling]);
 
+    const sendControlMessage = useCallback((type, payload = {}) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type, ...payload }));
+            return true;
+        }
+        return false;
+    }, [wsRef]);
+
     const endCall = useCallback(() => { // Wrapped in useCallback
         console.log('Attempting to end call...');
+
+        if (vadSpeakingRef.current) {
+            sendControlMessage('vad_end');
+            vadSpeakingRef.current = false;
+        }
+        vadPreRollRef.current = [];
 
         // Stop the original media stream (microphone) tracks
         if (streamRef.current) {
@@ -274,8 +234,7 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
         audioSourceRef.current = null; // Always clear the reference
 
         // Signal backend to flush any remaining buffer, but DO NOT close the WebSocket here.
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send('stop_audio_stream');
+        if (sendControlMessage('stop_audio_stream')) {
             console.log('Sent stop_audio_stream signal.');
         }
 
@@ -290,7 +249,7 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
             text: `Call ended. Thank you for calling with ${characterName}!`,
             sender: 'bot'
         }]);
-    }, [analyserNode, characterName, onCallStateChange, setMessages, showMessageBox, wsRef]); // Removed setIsCalling from dependencies of endCall
+    }, [analyserNode, characterName, onCallStateChange, sendControlMessage, setMessages, showMessageBox]); // Removed setIsCalling from dependencies of endCall
 
     const startCall = async () => {
         // Check if the passed wsRef is valid and open BEFORE proceeding
@@ -323,8 +282,10 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
 
             // Function to send start_audio_stream signal with retry logic
             const sendStartAudioStream = () => {
-                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                    wsRef.current.send('start_audio_stream');
+                if (sendControlMessage('start_audio_stream', {
+                    sampleRate: audioContext.sampleRate,
+                    clientVad: true,
+                })) {
                     console.log('Sent start_audio_stream signal.');
                 } else {
                     console.warn('WebSocket not open yet, retrying send_start_audio_stream in 500ms...');
@@ -342,9 +303,9 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
             console.log('Microphone stream connected to AnalyserNode.');
 
 
-            // Create a ScriptProcessorNode to get raw audio data for sending to backend
+            // Create a ScriptProcessorNode to get raw audio data for VAD + backend streaming.
             // NOTE: ScriptProcessorNode is deprecated. For production, consider AudioWorkletNode.
-            scriptProcessorRef.current = audioContext.createScriptProcessor(4096, 1, 1);
+            scriptProcessorRef.current = audioContext.createScriptProcessor(CLIENT_VAD_BUFFER_SIZE, 1, 1);
             audioSourceRef.current.connect(scriptProcessorRef.current);
             // Connect to destination to keep scriptProcessor active, but actual output is not needed.
             scriptProcessorRef.current.connect(audioContext.destination);
@@ -352,44 +313,58 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
             scriptProcessorRef.current.onaudioprocess = (event) => {
                 const inputBuffer = event.inputBuffer;
                 const audioData = inputBuffer.getChannelData(0); // Get raw Float32Array data
+                const rms = calculateFloatRms(audioData);
+                const now = performance.now();
+                const pcmBuffer = floatToPcm16Buffer(audioData);
 
-                // Convert Float32Array to a more efficient transferable format (e.g., Int16Array)
-                // The backend expects LINEAR16, so 16-bit PCM is appropriate.
-                const pcmData = new Int16Array(audioData.length);
-                for (let i = 0; i < audioData.length; i++) {
-                    // Convert float to 16-bit integer, scaling to the full range
-                    pcmData[i] = Math.max(-1, Math.min(1, audioData[i])) * 0x7FFF;
+                if (rms >= CLIENT_VAD_SPEECH_RMS) {
+                    vadLastVoiceAtRef.current = now;
+
+                    if (!vadSpeakingRef.current) {
+                        vadSpeakingRef.current = true;
+                        vadSpeechStartedAtRef.current = now;
+                        sendControlMessage('vad_start');
+
+                        vadPreRollRef.current.forEach((chunk) => {
+                            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                                wsRef.current.send(chunk);
+                            }
+                        });
+                        vadPreRollRef.current = [];
+                    }
+                }
+
+                if (!vadSpeakingRef.current) {
+                    vadPreRollRef.current.push(pcmBuffer.slice(0));
+                    if (vadPreRollRef.current.length > CLIENT_VAD_PREROLL_CHUNKS) {
+                        vadPreRollRef.current.shift();
+                    }
+                    return;
                 }
 
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                    wsRef.current.send(pcmData.buffer); // Corrected: ws.send to wsRef.current.send
+                    wsRef.current.send(pcmBuffer);
                 } else {
                     console.warn('WebSocket not open, cannot send audio data.');
                 }
-            };
 
-            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    audioChunksRef.push(event.data);
+                if (
+                    rms < CLIENT_VAD_SILENCE_RMS &&
+                    now - vadLastVoiceAtRef.current >= CLIENT_VAD_END_SILENCE_MS &&
+                    now - vadSpeechStartedAtRef.current >= CLIENT_VAD_END_SILENCE_MS
+                ) {
+                    sendControlMessage('vad_end');
+                    vadSpeakingRef.current = false;
+                    vadPreRollRef.current = [];
                 }
             };
-            mediaRecorderRef.current.onstop = () => {
-                console.log('MediaRecorder stopped.');
-                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                    wsRef.current.send('stop_audio_stream'); // Signal backend to flush any remaining buffer
-                } else {
-                    console.warn('WebSocket not open, cannot send stop_audio_stream signal on recorder stop.');
-                }
-            };
-
-            mediaRecorderRef.current.start(100); // Collect data every 100ms
-            console.log("MediaRecorder started."); // Added log
 
         } catch (error) {
             console.error('Error accessing microphone or setting up WebSocket:', error);
             console.trace('Stack trace for startCall error:'); // Added for better debugging
             showMessageBox(`Failed to start call: ${error.message}. Please allow microphone access and ensure backend server is running.`);
+            vadSpeakingRef.current = false;
+            vadPreRollRef.current = [];
             setIsCalling(false);
             onCallStateChange(false); // Notify parent ChatPage that call is not active
             console.log('setIsCalling(false) - isCalling now (due to error):', false); // Added log
@@ -429,35 +404,48 @@ const VoiceCallFeature = ({ showMessageBox, closeMessageBox, setMessages, setDet
 
             // Signal backend if WebSocket is still open and call was active when unmounting
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isCallingRef.current) {
+                if (vadSpeakingRef.current) {
+                    console.log('VoiceCallFeature cleanup: Sending vad_end signal.');
+                    sendControlMessage('vad_end');
+                    vadSpeakingRef.current = false;
+                }
                 console.log('VoiceCallFeature cleanup: Sending stop_audio_stream signal.');
-                wsRef.current.send('stop_audio_stream');
+                sendControlMessage('stop_audio_stream');
             }
+            vadPreRollRef.current = [];
             // Do NOT set isCalling to false here, as this is for unmount.
             // The endCall button handles setting it to false.
             console.log('VoiceCallFeature cleanup finished.');
         };
-    }, []); // Empty dependency array: runs only on mount and cleanup on unmount.
+    }, [analyserNode, sendControlMessage, wsRef]); // Runs on mount and cleanup when audio dependencies change.
 
     return (
-        <div className="flex justify-center items-center space-x-3 mt-auto">
-            {!isCalling ? (
-                <button
-                    onClick={startCall}
-                    className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-lg transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center justify-center text-lg font-medium"
-                >
-                    <img src={startCallIconUri} alt="Start Call" className="h-6 w-6 mr-2" />
-                    Start Voice Call
-                </button>
-            ) : (
-                <button
-                    onClick={endCall}
-                    className="bg-red-600 hover:bg-red-700 text-white p-3 rounded-full shadow-lg transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 flex items-center justify-center text-lg font-medium"
-                >
-                    <img src={endCallIconUri} alt="End Call" className="h-6 w-6 mr-2" />
-                    End Voice Call
-                </button>
-            )}
-            {/* Removed the Video Call button */}
+        <div className="flex justify-center items-center gap-10 mt-auto py-2">
+            <button
+                onClick={startCall}
+                disabled={isCalling}
+                className={`flex flex-col items-center justify-center transition duration-200 bg-transparent border-0 p-0 ${isCalling ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
+                style={{ background: 'transparent', border: 'none', padding: 0 }}
+                aria-label="Call"
+            >
+                <span className="w-14 h-14 rounded-full bg-slate-600 hover:bg-slate-500 flex items-center justify-center shadow-lg">
+                    <img src={startCallIconUri} alt="Call" className="h-6 w-6" />
+                </span>
+                <span className="mt-2 text-sm text-gray-200">Call</span>
+            </button>
+
+            <button
+                onClick={endCall}
+                disabled={!isCalling}
+                className={`flex flex-col items-center justify-center transition duration-200 bg-transparent border-0 p-0 ${!isCalling ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
+                style={{ background: 'transparent', border: 'none', padding: 0 }}
+                aria-label="Hang up"
+            >
+                <span className="w-14 h-14 rounded-full bg-white hover:bg-gray-100 flex items-center justify-center shadow-lg">
+                    <img src={endCallIconUri} alt="Hang up" className="h-6 w-6" />
+                </span>
+                <span className="mt-2 text-sm text-gray-400">Hang up</span>
+            </button>
         </div>
     );
 };
@@ -505,8 +493,10 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
     const analyserNodeRef = useRef(null);
     const audioQueueRef = useRef([]);
     const audioPlayingRef = useRef(false);
+    const currentAudioSourceRef = useRef(null);
     const [isBotSpeaking, setIsBotSpeaking] = useState(false);
     const [isVoiceCallActive, setIsVoiceCallActive] = useState(false);
+    const [interimTranscript, setInterimTranscript] = useState('');
 
     const showMessageBox = (content) => {
         setMessageBoxContent(content);
@@ -542,8 +532,12 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
             source.buffer = decodedAudio;
             source.connect(analyser);
             source.connect(audioCtx.destination); // Connect to speakers
+            currentAudioSourceRef.current = source;
             source.start(0);
             source.onended = () => {
+                if (currentAudioSourceRef.current === source) {
+                    currentAudioSourceRef.current = null;
+                }
                 console.log('Audio chunk ended.');
                 playNextAudioChunk();
             };
@@ -567,6 +561,24 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
         }
     }, [playAudioBuffer]);
 
+    const clearAudioPlayback = useCallback(() => {
+        audioQueueRef.current = [];
+        audioPlayingRef.current = false;
+
+        if (currentAudioSourceRef.current) {
+            try {
+                currentAudioSourceRef.current.onended = null;
+                currentAudioSourceRef.current.stop();
+                currentAudioSourceRef.current.disconnect();
+            } catch (error) {
+                console.warn('Could not stop current audio source:', error);
+            }
+            currentAudioSourceRef.current = null;
+        }
+
+        setIsBotSpeaking(false);
+    }, []);
+
 
     useEffect(() => {
         const initAudioSystem = async () => {
@@ -581,7 +593,7 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
         initAudioSystem();
 
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            wsRef.current = new WebSocket('ws://localhost:8080/');
+            wsRef.current = new WebSocket(ORCHESTRATOR_WS_URL);
 
             wsRef.current.onopen = () => {
                 console.log('WebSocket for text connected.');
@@ -589,12 +601,13 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
             wsRef.current.onerror = (error) => {
                 console.error('WebSocket for text error:', error);
                 console.error('WebSocket for text error details (ChatPage):', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-                showMessageBox('Failed to connect to the server. Please ensure your Node.js server is running on `http://localhost:8080/` and your Python API on `http://localhost:5001/`.');
+                showMessageBox(`Failed to connect to the server. Please ensure your Node.js server is running at ${ORCHESTRATOR_WS_URL} and your emotion API on http://localhost:5001/.`);
             };
             wsRef.current.onclose = (event) => {
                 console.log('WebSocket for text closed. Code:', event.code, 'Reason:', event.reason);
                 setIsBotSpeaking(false);
                 setIsVoiceCallActive(false);
+                setInterimTranscript('');
                 if (event.code !== 1000) {
                     showMessageBox('Server connection lost unexpectedly. Please ensure your Node.js server is running.');
                 }
@@ -612,6 +625,9 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
                     if (data.type === 'message' || data.type === 'transcription') { // Handle both 'message' and 'transcription' types for text
                         // Determine sender based on backend's message structure or content
                         const sender = data.sender || (data.text.startsWith("You:") ? 'user' : 'bot');
+                        if (sender === 'user') {
+                            setInterimTranscript('');
+                        }
                         setMessages(prevMessages => {
                             // MODIFICATION: Use Date.now() + '-' + generateUniqueId() for unique IDs
                             const newMessages = [...prevMessages, { id: Date.now() + '-' + generateUniqueId(), text: data.text, sender: sender }];
@@ -619,9 +635,13 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
                             setTimeout(() => onMessagesChange(newMessages), 0);
                             return newMessages;
                         });
+                    } else if (data.type === 'stt_interim') {
+                        setInterimTranscript(data.text);
                     } else if (data.type === 'emotion') {
                         setDetectedEmotion(data.value);
                         console.log('Emotion detected:', data.value); // Log emotion detection
+                    } else if (data.type === 'clear_audio') {
+                        clearAudioPlayback();
                     } else if (data.type === 'error') {
                         showMessageBox(`Server Error: ${data.message}`);
                         setMessages(prevMessages => {
@@ -658,6 +678,7 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 wsRef.current.close();
             }
+            clearAudioPlayback();
             if (audioContextRef.current) {
                 audioContextRef.current.close().catch(e => console.error("Error closing AudioContext on unmount:", e));
                 audioContextRef.current = null;
@@ -696,8 +717,8 @@ const ChatPage = ({ selectedCharacter, userAvatar, initialMessages, onMessagesCh
                 <p className="text-sm text-gray-400 mt-1">{selectedCharacter ? selectedCharacter.by : '@EmoticaAI'}</p>
             </div>
 
-            {isVoiceCallActive && analyserNodeRef.current && (
-                <AudioVisualizer analyser={analyserNodeRef.current} isBotSpeaking={isBotSpeaking} />
+            {isVoiceCallActive && interimTranscript && (
+                <p className="text-sm text-blue-200 mt-2 px-1">You: {interimTranscript}</p>
             )}
 
             <div className="bg-blue-600 text-white px-4 py-2 rounded-lg mb-4 text-center text-lg font-medium">

@@ -1,18 +1,17 @@
 {
-  "name": "audio-processing-backend",
+  "name": "emotica-orchestrator-api",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Realtime voice orchestration API for Emotica",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "dotenv": "^16.5.0",
-    "elevenlabs": "^1.59.0",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
     "ws": "^8.18.2"

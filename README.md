@@ -1,75 +1,103 @@
-# Emotica - Emotion-Aligned Conversational AI Assistant
+# Emotica
 
-## 🌟 Project Overview
+Full-stack real-time emotion-aware voice AI system.
 
-**Emotica** is an innovative real-time conversational AI assistant designed to understand and respond to user emotions. By integrating Speech-to-Text (STT), Emotion Recognition, a Large Language Model (LLM), and Text-to-Speech (TTS), the application provides a dynamic and empathetic voice-based interaction experience. It aims to create a more natural and understanding dialogue by aligning the AI's responses with the user's detected emotional state.
+## Clean Project Structure
 
-## ✨ Features
+- `apps/frontend/`
+    - React + Vite user interface
+- `services/orchestrator-api/`
+    - Node.js WebSocket orchestrator (VAD, LLM, TTS, service coordination)
+- `services/stt-emotion-api/`
+    - Python Flask API for speech emotion prediction
+- `ml/ser_pipeline/`
+    - Modular SER data prep and training package
+- `scripts/ser_pipeline.py`
+    - CLI entry for SER pipeline steps
+- `requirements.txt`
+    - Python dependencies for the emotion API and SER training pipeline
 
-* **Real-time Voice Interaction:** Speak naturally to the AI assistant.
-* **Speech-to-Text (STT):** Transcribes user's spoken words into text using a local Whisper microservice.
-* **Emotion Recognition:** Identifies 8 distinct emotions from user's speech (Neutral, Calm, Happy, Sad, Angry, Fearful, Disgust, Surprise - adjust if your model has different categories) and displays them in real-time.
-* **Emotion-Aligned LLM Responses:** The Google Gemini LLM generates responses that are tailored to the detected emotion, ensuring empathetic and appropriate conversational flow.
-* **Text-to-Speech (TTS):** Converts the AI's text responses back into natural-sounding speech using ElevenLabs.
-* **Intuitive User Interface:** A clean and responsive chat interface built with React and Tailwind CSS.
-* **WebSocket Communication:** Enables low-latency, real-time data exchange between the frontend and backend.
+## Runtime Ports
 
-## 🚀 Technologies Used
+- Frontend (Vite): `5173` (default)
+- Orchestrator API: `8080` (default)
+- Emotion API: `5001` (default)
 
-* **Frontend:**
-    * React.js
-    * Tailwind CSS
-    * Web Audio API
-    * Lucide React (for icons)
-* **Backend (Node.js):**
-    * Node.js (Express.js for server, WebSockets for communication)
-    * `ws` (WebSocket library)
-    * `dotenv` (for environment variables)
-    * `@elevenlabs/elevenlabs-js` (ElevenLabs SDK for TTS)
-    * `@google/generative-ai` (Google Gemini SDK for LLM)
-* **AI Microservice (Python):**
-    * Python 3
-    * Flask (for REST API)
-    * `transformers` (for Whisper STT model)
-    * `librosa` (for audio processing)
-    * `numpy` (for numerical operations)
-    * `scikit-learn` (for emotion recognition model) - *Or specify your actual emotion recognition library/framework*
-    * `soundfile` (for audio file handling)
-* **Deployment:**
-    * GitHub (Version Control)
-    * Render (PaaS for hosting)
+## Quick Start
 
-## 🏗️ Architecture
+### 1) Start Emotion API
 
-The application follows a modular architecture to handle real-time voice interactions:
+```bash
+cd services/stt-emotion-api
+python -m venv .venv
+# activate env, then:
+pip install -r ../../requirements.txt
+python main.py
+```
 
-1.  **React Frontend:** Captures user audio from the microphone, displays chat messages, and shows the detected emotion. It communicates with the Node.js backend via WebSockets.
-2.  **Node.js Backend:**
-    * Acts as the central orchestrator.
-    * Receives raw audio chunks from the frontend via WebSocket.
-    * Forwards the audio to the Python Flask Microservice for STT and Emotion Recognition.
-    * Receives transcription and emotion from the Flask Microservice.
-    * Constructs an emotion-aligned prompt and sends it to the Google Gemini LLM.
-    * Receives the text response from Gemini.
-    * Sends the text response to ElevenLabs for TTS.
-    * Streams the generated audio back to the frontend via WebSocket.
-    * Sends text messages (user transcription, bot response) back to the frontend for display.
-3.  **Python Flask Microservice:**
-    * A lightweight Flask API that receives base64-encoded audio from the Node.js backend.
-    * Performs Speech-to-Text (STT) using the Whisper model.
-    * Performs Emotion Recognition on the transcribed audio/features.
-    * Returns the transcription and detected emotion to the Node.js backend.
+### 2) Start Orchestrator API
 
-```mermaid
-graph TD
-    A[User's Microphone] --> B(React Frontend);
-    B -- WebSocket (Raw Audio Chunks) --> C(Node.js Backend);
-    C -- HTTP POST (Base64 Audio) --> D(Python Flask Microservice);
-    D -- (Transcription, Emotion) --> C;
-    C -- Prompt (User Input, Emotion, Intent) --> E(Google Gemini LLM);
-    E -- Text Response --> C;
-    C -- Text Response --> F(ElevenLabs TTS);
-    F -- Audio Stream --> C;
-    C -- WebSocket (Audio Chunks) --> B;
-    C -- WebSocket (Text Messages, Emotion) --> B;
-    B --> G[User's Speaker/Screen];
+```bash
+cd services/orchestrator-api
+npm install
+copy .env.example .env
+# edit .env and paste your real API keys
+npm run dev
+```
+
+Environment variables used by orchestrator:
+
+- `GROQ_API_KEY`
+- `GROQ_MODEL` (optional, default `llama-3.3-70b-versatile`)
+- `DEEPGRAM_API_KEY`
+- `DEEPGRAM_MODEL` (optional, default `nova-3`)
+- `DEEPGRAM_LANGUAGE` (optional, default `en-US`)
+- `DEEPGRAM_ENDPOINTING_MS` (optional, default `300`)
+- `DEEPGRAM_UTTERANCE_END_MS` (optional, default `1000`)
+- `DEEPGRAM_KEEPALIVE_MS` (optional, default `4000`)
+- `DEEPGRAM_FINALIZE_GRACE_MS` (optional, default `900`)
+- `UNREAL_SPEECH_API_KEY`
+- `UNREAL_SPEECH_ENDPOINT` (optional, default `https://api.v8.unrealspeech.com/stream`)
+- `UNREAL_SPEECH_VOICE_ID` (optional, default `Emily`)
+- `TTS_MIN_SEGMENT_CHARS` (optional, default `8`)
+- `TTS_MAX_SEGMENT_CHARS` (optional, default `220`)
+- `EMOTION_API_URL` (optional, default `http://localhost:5001/emotion`)
+- `PORT` (optional, default `8080`)
+
+## Real-Time Voice Pipeline
+
+The voice path is optimized for low latency:
+
+1. Browser audio uses lightweight VAD and streams only speech chunks plus a short pre-roll.
+2. The Node orchestrator opens a direct Deepgram WebSocket and pipes LINEAR16 audio immediately.
+3. When VAD ends the turn, emotion inference starts asynchronously from the buffered audio and Deepgram is finalized.
+4. The LLM starts immediately with the previous known emotion, or `neutral` on the first turn.
+5. The newly detected emotion is stored for the next turn.
+6. Groq streams text tokens; complete sentence segments are sent to Unreal Speech as soon as they are ready.
+
+### 3) Start Frontend
+
+```bash
+cd apps/frontend
+npm install
+npm run dev
+```
+
+## SER Training Pipeline
+
+Run from repository root:
+
+```bash
+python scripts/ser_pipeline.py extract --audio-dir <wav_folder>
+python scripts/ser_pipeline.py split --audio-dir <wav_folder>
+python scripts/ser_pipeline.py train --audio-dir <wav_folder>
+# or all in one
+python scripts/ser_pipeline.py all --audio-dir <wav_folder>
+```
+
+## Cleanup Notes Applied
+
+- Renamed folders to explicit domain names (apps/services/ml/scripts).
+- Removed generated frontend `dist` artifact from tracked workspace.
+- Removed local Python virtual environment from tracked workspace.
+- Removed duplicate legacy API entrypoint and kept a single startup file: `services/stt-emotion-api/main.py`.

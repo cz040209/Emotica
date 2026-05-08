@@ -1,17 +1,30 @@
 # Environment variables (CRITICAL for security)
 .env
+.env.local
+.env.*.local
 
 # Node.js dependencies (for both frontend and backend)
 node_modules/
+package-lock.json
+yarn.lock
 
-# React build output (from frontend/build or frontend/dist)
-frontend/build/
-frontend/dist/ # Include if Vite outputs to 'dist'
+# Frontend build outputs
+apps/frontend/build/
+apps/frontend/dist/
+
+# Generic build outputs
+dist/
+build/
 
 # Python dependencies/environments
 venv/
+emotica/
+**/venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.Python
 
 # Logs
 *.log
@@ -22,12 +35,48 @@ pnpm-debug.log*
 lerna-debug.log*
 logs/
 
-# Editor directories and files (common ones)
+# Editor directories and files
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
+*~
+
+# Model weights and trained artifacts
+*.h5
+*.pkl
+*.pth
+*.pt
+*.joblib
+*.model
+models/
+checkpoints/
+weights/
+artifacts/
+
+# Large datasets
+datasets/RAVDESS/
+datasets/TESS\ Toronto\ emotional\ speech\ set\ data/
+datasets/**/*.wav
+datasets/**/*.mp3
+
+# Jupyter notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# OS files
+.DS_Store
+Thumbs.db
