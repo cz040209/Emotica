@@ -12,7 +12,7 @@ Emotica is designed to create human-like conversational experiences by understan
 - **Speech-to-Text (STT)**: Converts audio to text using Deepgram
 - **Emotion Recognition (SER)**: Predicts emotional state using LSTM-Attention models
 - **LLM Response Generation**: Creates context-aware responses with Groq
-- **Text-to-Speech (TTS)**: Converts responses to natural speech using Unreal Speech
+- **Text-to-Speech (TTS)**: Converts responses to natural, emotion-aware speech using Hume AI
 
 ---
 
@@ -21,61 +21,74 @@ Emotica is designed to create human-like conversational experiences by understan
 ### Real-Time Voice Pipeline Flow
 
 ```
-┌─────────────────┐
-│  User speaks    │
-│  (browser audio)│
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────┐
-│ VAD (Voice Activity         │
-│ Detection) detects speech   │
-│ & buffers audio             │
-└────────┬────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│ Stream LINEAR16 audio +          │
-│ pre-roll to Deepgram WebSocket   │
-│ (Speech-to-Text)                 │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────┐
-│ VAD ends turn,               │
-│ emotion inference starts     │
-│ (async from buffered audio)  │
-└────────┬───────────────────────┘
-         │
-         ▼
-┌──────────────────────────────┐
-│ LSTM-Attention Model         │
-│ predicts emotion:            │
-│ (angry, happy, sad, neutral) │
-└────────┬───────────────────────┘
-         │
-         ▼
-┌──────────────────────────────┐
-│ LLM (Groq) generates          │
-│ response with context of      │
-│ detected emotion              │
-└────────┬───────────────────────┘
-         │
-         ▼
-┌──────────────────────────────┐
-│ Split response into           │
-│ segments & stream to          │
-│ Unreal Speech (TTS)           │
-└────────┬───────────────────────┘
-         │
-         ▼
-┌──────────────────────────────┐
-│ Play audio response           │
-│ to user (browser)             │
-└────────┬───────────────────────┘
-         │
-         ▼
-    Loop again
+                  USER SPEAKS & STOPS
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │ VAD (Voice Activity Detection)    │
+        │ detects speech & buffers audio    │
+        └───────────────────┬───────────────┘
+                            │
+                    VAD END DETECTED
+                            │
+        ┌───────────────────┴───────────────┐
+        │                                   │
+        │   PARALLEL / ASYNC EXECUTION      │
+        │                                   │
+    ┌───▼──────────────┐           ┌───────▼────────────┐
+    │ PATH A: STT      │           │ PATH B: EMOTION    │
+    │ (AWAITED)        │           │ (NOT AWAITED)      │
+    │                  │           │                    │
+    │ Deepgram         │           │ Flask + LSTM       │
+    │ WebSocket        │           │ Inference          │
+    │ Finalize stream  │           │ (Fire & forget)    │
+    │ ⏳ Blocks        │           │ ✓ Async runs       │
+    │ response gen     │           │   parallel         │
+    │                  │           │                    │
+    │ Get transcript   │           │ Get emotion        │
+    └───┬──────────────┘           └───────┬────────────┘
+        │                                   │
+        └──────────┬──────────────────────┬─┘
+                   │ Both complete        │
+                   │ simultaneously       │
+                   │                      │
+            ┌──────▼──────────────────────▼─────┐
+            │ Store emotion in memory            │
+            │ (for next turn's prompt context)   │
+            └──────┬─────────────────────────────┘
+                   │
+        ┌──────────▼──────────────────────────┐
+        │ Build Emotion-Aware Prompt:         │
+        │ • USER: {transcript}                │
+        │ • EMOTION: {detected_emotion}       │
+        │ • INTENT: {emotion context}         │
+        └──────┬───────────────────────────────┘
+               │
+        ┌──────▼────────────────────┐
+        │ Groq LLM                   │
+        │ Stream response tokens     │
+        │ with emotional context     │
+        └──────┬────────────────────┘
+               │
+        ┌──────▼──────────────────────────────┐
+        │ Segment into TTS chunks (8-220 chr) │
+        │ Stream to Hume AI TTS                │
+        └──────┬───────────────────────────────┘
+               │
+        ┌──────▼──────────────────────────────┐
+        │ Hume AI TTS with emotion voice:     │
+        │ • Apply emotion persona              │
+        │ • Stream MP3 audio chunks            │
+        └──────┬───────────────────────────────┘
+               │
+        ┌──────▼──────────────────────────────┐
+        │ Browser: Play emotion-matched audio │
+        └──────┬───────────────────────────────┘
+               │
+               └─────────────────────────────┐
+                    (Loop for next turn)    │
+                                            │
+                    Ready for next input ◄──┘
 ```
 
 ---
@@ -144,9 +157,9 @@ emotica/
 - **soundfile** - Audio file I/O
 
 ### **External APIs**
-- **Deepgram** - Speech-to-Text (STT) with streaming support
-- **Groq** - LLM API for fast conversational responses
-- **Unreal Speech** - Text-to-Speech (TTS) synthesis
+- **Deepgram** - Speech-to-Text (STT) with streaming WebSocket support
+- **Groq** - LLM API for fast conversational responses with streaming tokens
+- **Hume AI** - Emotion-aware Text-to-Speech (TTS) with voice persona customization
 
 ### **Data & Training**
 - **RAVDESS Dataset** - Ryerson Audio-Visual Emotion Database (24 actors)
@@ -220,38 +233,49 @@ npm run dev
 **What it does:**
 - Receives audio streams from the browser via WebSocket
 - Manages Voice Activity Detection (VAD)
-- Pipes audio to Deepgram for speech-to-text
-- Requests emotion prediction from the emotion API
-- Calls Groq LLM for context-aware responses
-- Streams text segments to Unreal Speech for audio synthesis
-- Returns synthesized speech to the browser
+- **Streams audio to Deepgram WebSocket** for real-time speech-to-text transcription
+- **Fires async emotion detection** from Flask API (does NOT block STT)
+- Emotion result from current turn stored for next turn's context
+- **Builds emotion-aware prompts** using detected emotion + conversation history
+- Calls Groq LLM with emotion context for conversational AI responses
+- **Streams response to Hume AI TTS** with emotion persona (angry, happy, calm, sad, etc.)
+- Returns synthesized emotion-matched speech to the browser
 
 **Required Environment Variables:**
 
 ```env
-# Speech-to-Text (Deepgram)
-DEEPGRAM_API_KEY=your_deepgram_key
-DEEPGRAM_MODEL=nova-3                    # optional
-DEEPGRAM_LANGUAGE=en-US                  # optional
-DEEPGRAM_ENDPOINTING_MS=300              # optional
-DEEPGRAM_UTTERANCE_END_MS=1000           # optional
-DEEPGRAM_KEEPALIVE_MS=4000               # optional
-DEEPGRAM_FINALIZE_GRACE_MS=900           # optional
+# ─── DEEPGRAM (Speech-to-Text Streaming) ───
+DEEPGRAM_API_KEY=your_deepgram_key              # REQUIRED
+DEEPGRAM_LISTEN_URL=wss://api.deepgram.com/v1/listen  # optional
+DEEPGRAM_MODEL=nova-3                          # optional - model for STT
+DEEPGRAM_LANGUAGE=en-US                        # optional - language code
+DEEPGRAM_ENDPOINTING_MS=300                    # optional - silence threshold (ms)
+DEEPGRAM_UTTERANCE_END_MS=1000                 # optional - utterance timeout (ms)
+DEEPGRAM_KEEPALIVE_MS=4000                     # optional - keepalive interval (ms)
+DEEPGRAM_FINALIZE_GRACE_MS=900                 # optional - grace period after finalize (ms)
 
-# LLM (Groq)
-GROQ_API_KEY=your_groq_key
-GROQ_MODEL=llama-3.3-70b-versatile       # optional
+# ─── GROQ (LLM for Response Generation) ───
+GROQ_API_KEY=your_groq_key                     # REQUIRED
+GROQ_MODEL=llama-3.3-70b-versatile             # optional - LLM model
 
-# Text-to-Speech (Unreal Speech)
-UNREAL_SPEECH_API_KEY=your_unreal_speech_key
-UNREAL_SPEECH_ENDPOINT=https://api.v8.unrealspeech.com/stream  # optional
-UNREAL_SPEECH_VOICE_ID=Emily              # optional
-TTS_MIN_SEGMENT_CHARS=8                   # optional
-TTS_MAX_SEGMENT_CHARS=220                 # optional
+# ─── HUME AI (Emotion-Aware Text-to-Speech) ───
+HUME_API_KEY=your_hume_api_key                 # REQUIRED
+HUME_TTS_ENDPOINT=https://api.hume.ai/v0/tts   # optional - TTS endpoint
 
-# Service URLs
-EMOTION_API_URL=http://localhost:5001/emotion  # optional
-PORT=8080                                 # optional
+# ─── EMOTION API (Flask Emotion Detection) ───
+EMOTION_API_URL=http://localhost:5001/emotion  # optional - emotion API endpoint
+
+# ─── AUDIO PROCESSING ───
+AUDIO_SAMPLE_RATE=48000                        # optional - client audio sample rate (Hz)
+CALL_END_SILENCE_THRESHOLD_MS=5000             # optional - timeout before ending call (ms)
+SILENCE_VOLUME_THRESHOLD=20                    # optional - RMS volume threshold for silence
+
+# ─── TTS STREAMING ───
+TTS_MIN_SEGMENT_CHARS=8                        # optional - min chars to send to TTS
+TTS_MAX_SEGMENT_CHARS=220                      # optional - max chars per TTS segment
+
+# ─── SERVER ───
+PORT=8080                                      # optional - orchestrator server port
 ```
 
 ---
@@ -325,32 +349,181 @@ python scripts/ser_pipeline.py all --audio-dir <wav_folder>
 
 ---
 
-## 📈 Emotion Pipeline Details
+## 📈 Emotion-Aware Processing Pipeline
 
-### Step-by-Step Flow
+### Async/Parallel Architecture (Key Innovation)
 
-1. **Audio Input** → Browser captures user speech (16kHz, mono)
-2. **VAD Detection** → Client-side voice detection sends chunks to server
-3. **STT Processing** → Deepgram converts audio to text in real-time
-4. **Emotion Inference** → LSTM-Attention model analyzes audio features
-   - Input: Mel-spectrogram (time × frequency)
-   - Output: Emotion probabilities [angry, happy, sad, neutral, etc.]
-5. **Context Building** → Emotion + previous context passed to LLM
-6. **Response Generation** → Groq generates emotion-aware response
-7. **TTS Synthesis** → Unreal Speech converts response to audio
-8. **Audio Playback** → Browser plays synthesized response
+When **user stops speaking (VAD ends)**, two critical processes execute **in parallel**:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  VAD DETECTS END OF SPEECH → TRIGGER TWO PATHS             │
+└────────────────────────────────────────────────────────────┘
+                              │
+                  ┌───────────┴───────────┐
+                  │                       │
+          ┌───────▼────────┐      ┌──────▼──────────┐
+          │ PATH A: STT    │      │ PATH B: EMOTION │
+          │ (AWAITED)      │      │ (NOT AWAITED)   │
+          │                │      │                 │
+          │ Deepgram       │      │ Flask API       │
+          │ Finalize       │      │ LSTM Inference  │
+          │ WebSocket      │      │ (Fire & forget) │
+          │                │      │                 │
+          │ ⏳ BLOCKS      │      │ ✓ ASYNC         │
+          │ response gen   │      │ ✓ Runs parallel │
+          │                │      │                 │
+          └───────┬────────┘      └──────┬──────────┘
+                  │                       │
+                  │ Both complete         │
+                  │ ~simultaneously       │
+                  │                       │
+          ┌───────▼───────────────────────▼──────┐
+          │ Store emotion for NEXT turn           │
+          │ (lastKnownEmotion = detected emotion) │
+          └───────┬────────────────────────────────┘
+                  │
+          ┌───────▼────────────────────────────┐
+          │ Build emotion-aware prompt with:   │
+          │ • USER: {transcript from PATH A}   │
+          │ • EMOTION: {emotion from PATH B}   │
+          │ • INTENT: derived from emotion     │
+          │ • RESPONSE_TEMPLATE: matched tone  │
+          └───────┬────────────────────────────┘
+                  │
+          ┌───────▼────────────────────────────┐
+          │ Groq streams response              │
+          │ with emotion context               │
+          └───────┬────────────────────────────┘
+                  │
+          ┌───────▼────────────────────────────┐
+          │ Hume AI TTS with voice persona:    │
+          │ • Apply emotion to speech          │
+          │ • Stream MP3 audio chunks          │
+          └───────┬────────────────────────────┘
+                  │
+          ┌───────▼────────────────────────────┐
+          │ Browser plays response audio       │
+          └────────────────────────────────────┘
+```
+
+### Detailed Step-by-Step Flow
+
+1. **Audio Input** → Browser captures user speech (48kHz, PCM, mono)
+
+2. **Client VAD Detection** → Detects speech start/end in real-time
+
+3. **Streaming to Server** → Audio chunks streamed via WebSocket
+
+4. **VAD End Detected** → Triggers parallel async execution:
+
+   **PATH A: Speech-to-Text (AWAITED - blocks LLM call)**
+   - Deepgram WebSocket receives audio chunks in real-time
+   - Streams interim results as user speaks
+   - When VAD ends, sends `Finalize` message
+   - Waits for final transcript with grace period
+   - Returns complete user utterance text
+
+   **PATH B: Emotion Detection (NOT AWAITED - async fire-and-forget)**
+   - Buffered audio sent to Flask emotion API
+   - LSTM-Attention model extracts Mel-spectrogram
+   - Runs inference (doesn't block STT or response generation)
+   - Returns emotion probability: `{anger: 0.8, happy: 0.1, sad: 0.05, ...}`
+   - Stores max emotion in `lastKnownEmotion` for next turn
+
+5. **Emotion-Aware Prompt Construction** → After both complete:
+   ```
+   System: You are a compassionate AI assistant. Respond with empathy.
+   
+   USER: "I'm really frustrated with this situation!"
+   EMOTION: angry
+   INTENT: User is upset, needs reassurance
+   → Respond calmly, validate feelings, offer help
+   
+   RESPONSE_TEMPLATE: {calm_understanding_tone}
+   ```
+
+6. **LLM Response Generation** → Groq processes with emotion context
+   - Stream tokens as they arrive
+   - Maintain emotional tone throughout
+
+7. **Emotion-Aware TTS** → Hume AI applies voice persona:
+   - **Detected emotion**: angry → `"Calm and grounded, steady and measured, de-escalating"`
+   - **Generated speech**: Matches emotional context of response
+   - Stream MP3 chunks to browser as generated
+
+8. **Audio Playback** → Browser plays complete response with emotional tone
+
+### Next Turn Emotion Context
+
+The emotion detected in turn N is used in turn N+1's prompt:
+- **Turn 1**: User speaks (angry) → emotion detected → stored
+- **Turn 2**: Use turn 1's emotion in prompt context → current emotion detected for turn 3
+- **Continuous**: Always using previous turn's emotion for context
+
+This creates a continuous emotional thread through the conversation.
 
 ---
 
-## 🔄 Low-Latency Optimization
+## 🔄 Low-Latency Architecture & Optimization
 
-The system is optimized for real-time performance:
+### Why This Design Minimizes Latency
 
-- **Lightweight VAD**: Only speech chunks sent to server
-- **Direct Deepgram WebSocket**: Minimizes latency for speech-to-text
-- **Asynchronous Emotion Inference**: Happens in parallel with STT
-- **Smart Segment Batching**: TTS segments sent as soon as complete
-- **Previous Emotion Memory**: LLM uses known emotion from previous turn
+**Standard Sequential Approach (SLOW):**
+```
+Audio → VAD End → STT (wait) → Emotion (wait) → LLM (wait) → TTS (wait)
+        └─────────────────────────────────────────────────────────┘
+                        Total: ~2-3 seconds
+```
+
+**Emotica Async Approach (FAST):**
+```
+Audio → VAD End → ┌─ STT (wait)     → LLM → TTS
+                  │ Emotion (async) ↗
+                Total: ~1-1.5 seconds
+```
+
+### Key Optimizations
+
+1. **Parallel Processing**
+   - Emotion detection runs **asynchronously** (fire-and-forget)
+   - Does NOT block STT or response generation
+   - Results arrive later but don't block critical path
+   - Use previous turn's emotion immediately
+
+2. **Streaming Architecture**
+   - **Deepgram**: WebSocket streaming (not REST poll)
+   - **Groq**: Token streaming for real-time responses
+   - **Hume AI TTS**: Stream MP3 chunks as generated
+   - No waiting for complete audio before playback
+
+3. **Smart Buffering & Segmentation**
+   - Client VAD: Only relevant speech sent upstream
+   - Segment batching: 8-220 chars per TTS request
+   - Accumulate segments before sending to TTS
+
+4. **Emotion Context Reuse**
+   - Current turn: Use emotion from previous turn
+   - Next turn: Use emotion just-detected from current turn
+   - Always have emotional context available immediately
+
+### Latency Breakdown (Typical)
+
+```
+Client speaks:        0ms
+├─ Audio streaming:   +100-200ms (real-time)
+├─ VAD detects end:   +50-100ms
+├─ Deepgram STT:      +300-500ms (awaited)
+├─ Emotion inference: +200-400ms (async, parallel)
+├─ Groq LLM:          +500-1000ms (streaming tokens)
+├─ Hume AI TTS:       +300-600ms (streaming audio)
+└─ Browser playback:  +100-200ms
+──────────────────────────────────
+Total end-to-end:     ~1.5-2.5 seconds
+```
+
+**Without async emotion**: Would add +200-400ms to critical path
+**With async emotion**: 0ms delay (runs in parallel)
 
 ---
 
@@ -368,10 +541,11 @@ See `requirements.txt` for complete list with versions.
 
 ### Node.js Requirements
 - Express (HTTP server)
-- WebSocket libraries
-- Deepgram SDK
-- Groq SDK
-- Unreal Speech SDK
+- WebSocket libraries for real-time communication
+- Deepgram SDK (speech-to-text)
+- Groq SDK (LLM)
+- Hume AI API (emotion-aware TTS)
+- fetch (for HTTP requests)
 
 ---
 
