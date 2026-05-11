@@ -1,12 +1,27 @@
+import os
 import traceback
+import warnings
 from dataclasses import dataclass
+
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"`clean_up_tokenization_spaces` was not set\..*",
+    category=FutureWarning,
+    module=r"transformers\.tokenization_utils_base",
+)
 
 import numpy as np
 import torch
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
+from transformers.utils import logging as hf_logging
 
 from .config import EMOTION_CLASSES, Settings
 from .emotion_model import create_emotion_model, pad_or_trim_features
+
+hf_logging.set_verbosity_error()
 
 
 @dataclass
@@ -29,6 +44,7 @@ def load_inference_bundle(settings: Settings) -> InferenceBundle:
     emotion_model = create_emotion_model(
         input_shape=(settings.target_wav2vec2_feature_length, 768),
         num_classes=len(EMOTION_CLASSES),
+        compile_model=False,
     )
     emotion_model.load_weights(str(settings.emotion_model_path))
 

@@ -4,7 +4,7 @@ from tensorflow.keras.layers import Attention, BatchNormalization, Bidirectional
 from tensorflow.keras.models import Model
 
 
-def create_emotion_model(input_shape=(716, 768), num_classes=8) -> Model:
+def create_emotion_model(input_shape=(716, 768), num_classes=8, compile_model: bool = True) -> Model:
     inputs = Input(shape=input_shape, name="input_features")
 
     x = Bidirectional(
@@ -31,7 +31,8 @@ def create_emotion_model(input_shape=(716, 768), num_classes=8) -> Model:
     )(x)
 
     model = Model(inputs=inputs, outputs=outputs, name="LSTM_Attention_Model")
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    if compile_model:
+        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
 
